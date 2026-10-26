@@ -1,0 +1,41 @@
+/**
+ * K3 Dashboard Worker configuration.
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ *
+ * One Worker serves the dashboard (React Router), the public API and webhooks (Hono),
+ * queue consumers and cron handlers. Environments differ only in names, bindings and secrets.
+ *
+ * Secrets (never in this file): see .dev.vars.example. Set per environment with
+ *   wrangler secret put <NAME> --env staging|production
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "k3-dashboard",
+	"compatibility_date": "2026-10-23",
+	"compatibility_flags": ["nodejs_compat"],
+	"main": "./workers/app.ts",
+	"observability": { "enabled": true },
+	"upload_source_maps": true,
+	"vars": {
+		"APP_ENV": "development",
+		"APP_ORIGIN": "http://localhost:5173"
+	},
+	/**
+	 * Hyperdrive: connection pooling to the environment's Postgres.
+	 * The id is created once per environment with `wrangler hyperdrive create`.
+	 * Locally, DATABASE_URL in .dev.vars is used instead (see server/env.ts).
+	 */
+	// "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<created per environment>" }],
+	"env": {
+		"staging": {
+			"name": "k3-dashboard-staging",
+			"vars": { "APP_ENV": "staging", "APP_ORIGIN": "https://staging-app.kermitwebcraft.com" }
+			// "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<staging id>" }]
+		},
+		"production": {
+			"name": "k3-dashboard-production",
+			"vars": { "APP_ENV": "production", "APP_ORIGIN": "https://app.kermitwebcraft.com" }
+			// "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<production id>" }]
+		}
+	}
+}
