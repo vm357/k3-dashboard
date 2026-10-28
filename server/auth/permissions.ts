@@ -39,3 +39,8 @@ export const DEFAULT_EMPLOYEE_PERMISSIONS: PermissionKey[] = [
 	"customers.view",
 	"services.view",
 ];
+
+/** Browser-safe check used by pages; the server-side `can(ctx, key)` in ctx.ts is the authority. */
+export function hasPermission(role: "owner" | "employee", permissions: readonly string[], key: PermissionKey): boolean {
+	return role === "owner" || permissions.includes(key);
+}

@@ -1,15 +1,58 @@
 @import "tailwindcss" source(".");
 
+/*
+ * K3 Dashboard tokens, taken from the Siren Coffee design system (ADR 004).
+ * Excluded on purpose: the Rewards gold accent and the logo mark.
+ * Components reference these semantic names, never raw hex.
+ */
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-sans: "Manrope", "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+  --color-canvas: #f2f0eb;        /* warm cream page */
+  --color-canvas-alt: #edebe9;    /* ceramic zone wash */
+  --color-card: #ffffff;
+  --color-quiet: #f9f9f9;
+  --color-feature: #1e3932;       /* house green: the one dark card per screen */
+  --color-heading: #006241;       /* starbucks green: titles, active nav */
+  --color-cta: #00754a;           /* green accent: primary action, focus */
+  --color-uplift: #2b5148;
+  --color-mint: #d4e9e2;          /* selected / highlighted */
+  --color-ink: rgba(0, 0, 0, 0.87);
+  --color-ink-soft: rgba(0, 0, 0, 0.58);
+  --color-on-dark: #ffffff;
+  --color-on-dark-soft: rgba(255, 255, 255, 0.7);
+  --color-hairline: #e7e7e7;
+  --color-input-border: #d6dbde;
+  --color-danger: #c82014;
+
+  --radius-input: 4px;
+  --radius-card: 12px;
+  --radius-pill: 50px;
+
+  --shadow-card: 0 0 0.5px 0 rgba(0, 0, 0, 0.14), 0 1px 1px 0 rgba(0, 0, 0, 0.24);
+  --shadow-nav: 0 1px 3px rgba(0, 0, 0, 0.1), 0 2px 2px rgba(0, 0, 0, 0.06), 0 0 2px rgba(0, 0, 0, 0.07);
+  --shadow-float: 0 0 6px rgba(0, 0, 0, 0.24), 0 8px 12px rgba(0, 0, 0, 0.14);
+
+  --tracking-tight: -0.01em;
 }
 
 html,
 body {
-  @apply bg-white dark:bg-gray-950;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  letter-spacing: var(--tracking-tight);
+  -webkit-font-smoothing: antialiased;
+}
 
-  @media (prefers-color-scheme: dark) {
-    color-scheme: dark;
-  }
+/* Signature press feedback from the design system; applied to every button and link-as-button. */
+.press {
+  transition: transform 0.2s ease;
+}
+.press:active {
+  transform: scale(0.95);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-cta);
+  outline-offset: 2px;
 }

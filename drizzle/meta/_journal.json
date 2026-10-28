@@ -15,6 +15,13 @@
       "when": 1793029778278,
       "tag": "0001_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793211062826,
+      "tag": "0002_invitations",
+      "breakpoints": true
     }
   ]
 }

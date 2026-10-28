@@ -29,6 +29,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.65.0",
     "@electric-sql/pglite": "^0.5.12",
+    "@electric-sql/pglite-socket": "^0.2.16",
     "@react-router/dev": "^8.5.0",
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^22.20.5",
