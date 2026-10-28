@@ -36,6 +36,6 @@ CRM (pilot launch), payments, notifications, online booking, subscriptions.
 
 ## Known gaps and decisions deferred
 
-- Design direction for the dashboard is not chosen; no UI beyond a placeholder route exists on purpose.
+- Design direction approved 2026-10-28: Direction A, "Today first", phone-first, on the Siren Coffee tokens (ADR 004). No UI beyond a placeholder route exists yet; Phase 2 builds the component system from the canvas.
 - Self-serve signup is disabled in production until phase 8; accounts come from invitations or seeding.
 - The Stripe, Resend and Hyperdrive secrets are declared in `.dev.vars.example` but unused until their phases.
