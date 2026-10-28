@@ -3,12 +3,14 @@ import { z } from "zod";
 import type { Route } from "./+types/team";
 import type { loader as layoutLoader } from "./business-layout";
 import { Page } from "../../components/shell";
-import { Avatar, Badge, Button, Card, Field, PageTitle } from "../../components/ui";
+import { Avatar, Badge, Button, ButtonLink, Card, Field, PageTitle } from "../../components/ui";
+import { Link } from "react-router";
 import { envContext } from "../../../server/context";
 import { hasPermission, PERMISSION_KEYS, type PermissionKey } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
 import { createInvitation, listPendingInvitations, revokeInvitation } from "../../../server/domain/invitations/service";
 import { listMembers, removeMember, setMemberPermissions } from "../../../server/domain/members/service";
+import { listEmployees } from "../../../server/domain/staff/service";
 
 export function meta(): Route.MetaDescriptors {
 	return [{ title: "Team · K3 Dashboard" }];
@@ -38,8 +40,8 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const { db, auth } = services(context);
 	const { ctx } = await requireTenant(db, auth, request, params.business!);
 	if (!hasPermission(ctx.role, [...ctx.permissions], "team.view")) throw new Response("Forbidden", { status: 403 });
-	const [members, pending] = await Promise.all([listMembers(db, ctx), listPendingInvitations(db, ctx)]);
-	return { members, pending, origin: context.get(envContext).APP_ORIGIN };
+	const [members, pending, employees] = await Promise.all([listMembers(db, ctx), listPendingInvitations(db, ctx), listEmployees(db, ctx, { includeInactive: true })]);
+	return { members, pending, employees, origin: context.get(envContext).APP_ORIGIN };
 }
 
 const inviteForm = z.object({ email: z.email("Enter a valid email"), role: z.enum(["owner", "employee"]) });
@@ -124,6 +126,31 @@ export default function Team({ loaderData, actionData }: Route.ComponentProps) {
 				</Card>
 			) : null}
 
+			<section className="flex flex-col gap-2">
+				<div className="flex items-center justify-between px-0.5">
+					<h2 className="text-base font-bold">Bookable staff</h2>
+					{canManage ? <ButtonLink to={`/app/${data.ctx.businessSlug}/team/new`} variant="outlined" size="sm">Add</ButtonLink> : null}
+				</div>
+				{loaderData.employees.length === 0 ? (
+					<p className="px-0.5 text-sm text-ink-soft">Add yourself first: name, services you do, and your weekly hours. Appointments are booked against bookable staff, not logins.</p>
+				) : (
+					<ul className="flex flex-col overflow-hidden rounded-card bg-card shadow-card">
+						{loaderData.employees.map((e) => (
+							<li key={e.id}>
+								<Link to={`/app/${data.ctx.businessSlug}/team/${e.id}`} className={`flex items-center gap-3 border-b border-hairline px-4 py-3 last:border-b-0 ${e.active ? "" : "opacity-60"}`}>
+									<Avatar name={e.displayName} size={36} />
+									<span className="flex min-w-0 flex-1 flex-col">
+										<span className="truncate text-sm font-semibold">{e.displayName}</span>
+										<span className="truncate text-xs text-ink-soft">{e.memberName ? `Login: ${e.memberName}` : "No login"}</span>
+									</span>
+									{!e.active ? <Badge>Hidden</Badge> : null}
+								</Link>
+							</li>
+						))}
+					</ul>
+				)}
+			</section>
+
 			{loaderData.pending.length > 0 ? (
 				<section className="flex flex-col gap-2">
 					<h2 className="px-0.5 text-base font-bold">Waiting to join</h2>
@@ -148,7 +175,7 @@ export default function Team({ loaderData, actionData }: Route.ComponentProps) {
 			) : null}
 
 			<section className="flex flex-col gap-2">
-				<h2 className="px-0.5 text-base font-bold">Members</h2>
+				<h2 className="px-0.5 text-base font-bold">Logins</h2>
 				<ul className="flex flex-col gap-2">
 					{loaderData.members.map((m) => (
 						<li key={m.id}>

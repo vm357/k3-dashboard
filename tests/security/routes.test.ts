@@ -87,7 +87,7 @@ describe("routes", () => {
 
 	it("an employee cannot change settings (403) and cannot open the team page without team.view", async () => {
 		const settings = await status(() =>
-			settingsAction(args(req("/app/salon-a/settings", { cookie: employeeA.cookie, form: { name: "Hacked", timeZone: "America/New_York" } }), { business: "salon-a" })),
+			settingsAction(args(req("/app/salon-a/settings", { cookie: employeeA.cookie, form: { intent: "business", name: "Hacked", timeZone: "America/New_York" } }), { business: "salon-a" })),
 		);
 		expect(settings.status).toBe(403);
 		const team = await status(() => teamLoader(args(req("/app/salon-a/team", { cookie: employeeA.cookie }), { business: "salon-a" })));
@@ -96,7 +96,7 @@ describe("routes", () => {
 
 	it("the owner can change settings, and the change is scoped to their business", async () => {
 		const r = await status(() =>
-			settingsAction(args(req("/app/salon-a/settings", { cookie: ownerA.cookie, form: { name: "Salon A Renamed", timeZone: "America/New_York" } }), { business: "salon-a" })),
+			settingsAction(args(req("/app/salon-a/settings", { cookie: ownerA.cookie, form: { intent: "business", name: "Salon A Renamed", timeZone: "America/New_York" } }), { business: "salon-a" })),
 		);
 		expect(r.status).toBe(200);
 		const b = await status(() => businessLayout(args(req("/app/salon-b", { cookie: ownerB.cookie }), { business: "salon-b" })));

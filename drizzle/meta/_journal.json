@@ -22,6 +22,13 @@
       "when": 1793211062826,
       "tag": "0002_invitations",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793214059982,
+      "tag": "0003_dashboard_core",
+      "breakpoints": true
     }
   ]
 }

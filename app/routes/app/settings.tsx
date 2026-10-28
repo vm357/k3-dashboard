@@ -6,13 +6,23 @@ import { Page } from "../../components/shell";
 import { Button, ButtonLink, Card, Field, PageTitle } from "../../components/ui";
 import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
+import { getHours, getPolicy, policySchema, setHours, setPolicy } from "../../../server/domain/businesses/hours";
 import { updateBusinessSettings } from "../../../server/domain/businesses/service";
+import { WEEKDAYS } from "../../../server/domain/staff/service";
 
 export function meta(): Route.MetaDescriptors {
 	return [{ title: "Settings · K3 Dashboard" }];
 }
 
-const schema = z.object({
+export async function loader({ request, params, context }: Route.LoaderArgs) {
+	const { db, auth } = services(context);
+	const { ctx } = await requireTenant(db, auth, request, params.business!);
+	if (!hasPermission(ctx.role, [...ctx.permissions], "settings.view")) throw new Response("Forbidden", { status: 403 });
+	const [hours, policy] = await Promise.all([getHours(db, ctx), getPolicy(db, ctx)]);
+	return { hours, policy };
+}
+
+const businessSchema = z.object({
 	name: z.string().trim().min(2, "At least 2 characters").max(80),
 	timeZone: z.string().min(1),
 });
@@ -21,63 +31,131 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 	const { db, auth } = services(context);
 	const { ctx } = await requireTenant(db, auth, request, params.business!);
 	const form = await request.formData();
-	const parsed = schema.safeParse({ name: form.get("name"), timeZone: form.get("timeZone") });
-	if (!parsed.success) {
-		const e = z.flattenError(parsed.error).fieldErrors;
-		return { ok: false as const, errors: { name: e.name?.[0], timeZone: e.timeZone?.[0] } };
-	}
+	const intent = form.get("intent");
 	try {
-		await updateBusinessSettings(db, ctx, parsed.data);
+		if (intent === "business") {
+			const parsed = businessSchema.safeParse({ name: form.get("name"), timeZone: form.get("timeZone") });
+			if (!parsed.success) {
+				const e = z.flattenError(parsed.error).fieldErrors;
+				return { saved: undefined, errors: { name: e.name?.[0], timeZone: e.timeZone?.[0] } };
+			}
+			await updateBusinessSettings(db, ctx, parsed.data);
+			return { saved: "business" as const, errors: {} };
+		}
+		if (intent === "hours") {
+			const rows: { weekday: number; opensAt: string; closesAt: string }[] = [];
+			for (let d = 0; d < 7; d++) {
+				if (form.get(`open-${d}`) !== "on") continue;
+				rows.push({ weekday: d, opensAt: String(form.get(`opens-${d}`)), closesAt: String(form.get(`closes-${d}`)) });
+			}
+			await setHours(db, ctx, rows);
+			return { saved: "hours" as const, errors: {} };
+		}
+		if (intent === "policy") {
+			const parsed = policySchema.safeParse({
+				slotIntervalMinutes: form.get("slotIntervalMinutes"),
+				minNoticeMinutes: Number(form.get("minNoticeHours") || 0) * 60,
+				maxAdvanceDays: form.get("maxAdvanceDays"),
+				cancellationWindowHours: form.get("cancellationWindowHours"),
+				cancellationNote: form.get("cancellationNote") ?? "",
+			});
+			if (!parsed.success) return { saved: undefined, errors: { policy: "Check the numbers and try again." } };
+			await setPolicy(db, ctx, parsed.data);
+			return { saved: "policy" as const, errors: {} };
+		}
+		return { saved: undefined, errors: {} };
 	} catch (err) {
 		if ((err as { status?: number }).status === 403) throw new Response("Forbidden", { status: 403 });
-		return { ok: false as const, errors: { timeZone: "Unknown time zone" } };
+		return { saved: undefined, errors: { timeZone: "Could not save. Check the values and try again." } };
 	}
-	return { ok: true as const, errors: {} };
 }
 
-export default function Settings({ actionData }: Route.ComponentProps) {
+export default function Settings({ loaderData, actionData }: Route.ComponentProps) {
 	const data = useRouteLoaderData<typeof layoutLoader>("routes/app/business-layout")!;
 	const editable = hasPermission(data.ctx.role, data.ctx.permissions, "settings.edit");
 	const base = `/app/${data.ctx.businessSlug}`;
+	const errors: Record<string, string | undefined> = actionData?.errors ?? {};
+	const hoursByDay = new Map(loaderData.hours.map((h) => [h.weekday, h]));
+	const p = loaderData.policy;
 
 	return (
 		<Page>
 			<PageTitle title="Settings" />
+
+			<div className="grid gap-3 sm:grid-cols-2">
+				<Card className="flex items-center justify-between gap-3">
+					<div className="flex flex-col">
+						<h2 className="text-base font-bold">Services</h2>
+						<span className="text-sm text-ink-soft">What you offer, prices, deposits.</span>
+					</div>
+					<ButtonLink to={`${base}/services`} variant="outlined" size="sm">Open</ButtonLink>
+				</Card>
+				<Card className="flex items-center justify-between gap-3">
+					<div className="flex flex-col">
+						<h2 className="text-base font-bold">Team</h2>
+						<span className="text-sm text-ink-soft">Staff, their hours, and logins.</span>
+					</div>
+					<ButtonLink to={`${base}/team`} variant="outlined" size="sm">Open</ButtonLink>
+				</Card>
+			</div>
+
 			<Card className="flex flex-col gap-4">
 				<h2 className="text-base font-bold">Business</h2>
 				<Form method="post" className="flex flex-col gap-4">
-					<Field label="Business name" name="name" defaultValue={data.business.name} disabled={!editable} error={actionData?.errors?.name} />
-					<Field
-						label="Time zone"
-						name="timeZone"
-						defaultValue={data.business.timeZone}
-						disabled={!editable}
-						hint="IANA name, for example America/New_York"
-						error={actionData?.errors?.timeZone}
-					/>
-					{actionData?.ok ? <p role="status" className="text-sm font-semibold text-heading">Saved</p> : null}
-					{editable ? (
-						<Button type="submit" className="self-start">
-							Save changes
-						</Button>
-					) : (
-						<p className="text-sm text-ink-soft">Only the owner can change these.</p>
-					)}
+					<input type="hidden" name="intent" value="business" />
+					<Field label="Business name" name="name" defaultValue={data.business.name} disabled={!editable} error={errors.name} />
+					<Field label="Time zone" name="timeZone" defaultValue={data.business.timeZone} disabled={!editable} hint="IANA name, for example America/New_York" error={errors.timeZone} />
+					{actionData?.saved === "business" ? <p role="status" className="text-sm font-semibold text-heading">Saved</p> : null}
+					{editable ? <Button type="submit" className="self-start">Save</Button> : <p className="text-sm text-ink-soft">Only the owner can change these.</p>}
 				</Form>
 			</Card>
-			<Card className="flex items-center justify-between gap-3">
-				<div className="flex flex-col">
-					<h2 className="text-base font-bold">Team</h2>
-					<span className="text-sm text-ink-soft">Invite employees and set what they can see.</span>
-				</div>
-				<ButtonLink to={`${base}/team`} variant="outlined" size="sm">
-					Manage
-				</ButtonLink>
+
+			<Card className="flex flex-col gap-3">
+				<h2 className="text-base font-bold">Opening hours</h2>
+				<p className="text-sm text-ink-soft">When the business takes appointments. Each team member's own hours sit inside these.</p>
+				<Form method="post" className="flex flex-col">
+					<input type="hidden" name="intent" value="hours" />
+					{WEEKDAYS.map((name, d) => {
+						const h = hoursByDay.get(d);
+						return (
+							<div key={d} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 border-b border-hairline py-2 last:border-b-0">
+								<label className="flex min-h-10 items-center gap-3 text-sm font-semibold">
+									<input type="checkbox" name={`open-${d}`} defaultChecked={!!h} disabled={!editable} className="h-5 w-5 accent-[#00754a]" />
+									{name}
+								</label>
+								<input type="time" name={`opens-${d}`} defaultValue={h?.opensAt ?? "09:00"} disabled={!editable} aria-label={`${name} opens`} className="min-h-11 w-28 rounded-input border border-input-border bg-card px-2 text-sm" />
+								<span className="text-sm text-ink-soft">to</span>
+								<input type="time" name={`closes-${d}`} defaultValue={h?.closesAt ?? "17:00"} disabled={!editable} aria-label={`${name} closes`} className="min-h-11 w-28 rounded-input border border-input-border bg-card px-2 text-sm" />
+							</div>
+						);
+					})}
+					{actionData?.saved === "hours" ? <p role="status" className="mt-2 text-sm font-semibold text-heading">Saved</p> : null}
+					{editable ? <Button type="submit" className="mt-3 self-start">Save hours</Button> : null}
+				</Form>
 			</Card>
+
+			<Card className="flex flex-col gap-4">
+				<h2 className="text-base font-bold">Booking rules</h2>
+				<Form method="post" className="flex flex-col gap-4">
+					<input type="hidden" name="intent" value="policy" />
+					<div className="grid grid-cols-2 gap-3">
+						<Field label="Slot interval (minutes)" name="slotIntervalMinutes" type="number" inputMode="numeric" min={5} max={60} step={5} defaultValue={p.slotIntervalMinutes} disabled={!editable} hint="Start times are offered every N minutes" />
+						<Field label="Minimum notice (hours)" name="minNoticeHours" type="number" inputMode="numeric" min={0} defaultValue={Math.round(p.minNoticeMinutes / 60)} disabled={!editable} />
+						<Field label="Book up to (days ahead)" name="maxAdvanceDays" type="number" inputMode="numeric" min={1} max={365} defaultValue={p.maxAdvanceDays} disabled={!editable} />
+						<Field label="Cancellation window (hours)" name="cancellationWindowHours" type="number" inputMode="numeric" min={0} defaultValue={p.cancellationWindowHours} disabled={!editable} hint="Cancellations inside this window keep the deposit" />
+					</div>
+					<div className="flex flex-col gap-1.5">
+						<label htmlFor="cancellationNote" className="text-sm font-semibold">Policy shown to clients (optional)</label>
+						<textarea id="cancellationNote" name="cancellationNote" rows={2} defaultValue={p.cancellationNote ?? ""} disabled={!editable} className="rounded-input border border-input-border bg-card px-3.5 py-2.5 text-base" />
+					</div>
+					{errors.policy ? <p role="alert" className="text-sm text-danger">{errors.policy}</p> : null}
+					{actionData?.saved === "policy" ? <p role="status" className="text-sm font-semibold text-heading">Saved</p> : null}
+					{editable ? <Button type="submit" className="self-start">Save rules</Button> : null}
+				</Form>
+			</Card>
+
 			<form method="post" action="/sign-out" className="lg:hidden">
-				<Button type="submit" variant="quiet" className="w-full">
-					Sign out
-				</Button>
+				<Button type="submit" variant="quiet" className="w-full">Sign out</Button>
 			</form>
 		</Page>
 	);

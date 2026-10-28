@@ -37,10 +37,33 @@ Not done (still Phase 1):
 - Invitation emails (phase 6); until then the owner copies the link from the Team page
 - Password reset (needs email); TOTP for admins (phase 8)
 
-## Phase 2: Dashboard core — next
+## Phase 2: Dashboard core — done
 
-Services and categories, employee profiles and availability, time off, client directory (read-only),
-business hours and booking policy settings. Builds on the primitives above; design per ADR 004.
+Done (tests: `npm test`, 52 passing locally on 2026-10-28; CI not yet run):
+
+- Migration `0003_dashboard_core`: service_categories, services, employees, employee_services,
+  business_hours, employee_availability, time_blocks, customers, customer_notes; RLS on all nine
+- Services: categories, create/edit in a bottom sheet (duration, buffer, price, deposit none/percent/fixed
+  with validation, online flag, description), hide/show, grouped list
+- Staff: bookable employees separate from logins (linkable), services they do, weekly hours with split
+  shifts and overlap rejection, time off (own time off needs appointments.manage_own, others' needs team.manage),
+  hide from booking; Team page lists bookable staff above logins
+- Settings: opening hours per weekday, booking rules (slot interval, minimum notice, max advance, cancellation
+  window and note) stored as JSON on the business with defaults, links to Services and Team
+- Clients: directory with search by name, email or phone digits; add in a sheet with normalised phone and
+  lower-cased email; duplicate-email guard; profile with pinned "Always" note, dated notes, Call/Text actions,
+  details editable; contact fields hidden for staff without customers.view_contact; audit rows never carry contact details
+- Today shows an owner setup checklist built from real data (services, staff, hours, first client)
+- Domain tests (14) covering cross-tenant probes for every new table, permission gates, validation
+
+Gate check: an owner can configure a real salon end to end (services, staff with hours, opening hours,
+clients) and an employee sees only what their keys allow. Met in tests; not yet seen in a browser.
+
+## Phase 3: Appointments and calendar — next
+
+Availability computation from hours, staff availability, time blocks and the exclusion constraint;
+appointments and appointment_services tables; day and week calendar; the booking sheet from the canvas;
+statuses and transitions; hold expiry cron.
 
 ## Known gaps and decisions deferred
 
