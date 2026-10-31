@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { AppEnv } from "../env";
 import { createAuth } from "../auth/auth";
@@ -10,12 +11,26 @@ import { createDb } from "../db/client";
  *  - /webhooks/stripe/* verified Stripe webhooks, phase 5 and 8
  *
  * Every route here is unauthenticated by nature or authenticated by Better Auth's
- * session cookie. Rate limiting for /api/public and /api/auth is a Cloudflare rule,
- * not application code.
+ * session cookie. Sign-in is rate limited by Better Auth with database-backed counters
+ * (server/auth/auth.ts); a Cloudflare WAF rate-limit rule on /api/* is the outer layer.
  */
 export const apiApp = new Hono<{ Bindings: AppEnv }>();
 
-apiApp.get("/api/health", (c) => c.json({ ok: true, env: c.env.APP_ENV }));
+/** Liveness plus a database round-trip. 503 with no detail when the database is unreachable. */
+apiApp.get("/api/health", async (c) => {
+	try {
+		const db = createDb(c.env);
+		await Promise.race([db.execute(sql`select 1`), new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000))]);
+		return c.json({ ok: true, env: c.env.APP_ENV });
+	} catch (err) {
+		console.error(JSON.stringify({ level: "error", route: "/api/health", message: (err as Error).message }));
+		return c.json({ ok: false, env: c.env.APP_ENV }, 503);
+	}
+});
+
+// Open registration is phase 8. Invitations create accounts server-side; the public
+// endpoint does not exist from the outside, in any environment.
+apiApp.all("/api/auth/sign-up/*", (c) => c.json({ error: "not_found" }, 404));
 
 apiApp.on(["GET", "POST"], "/api/auth/*", (c) => {
 	const db = createDb(c.env);

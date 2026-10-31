@@ -13,3 +13,5 @@ export const envContext = createContext<AppEnv>();
 export const executionContext = createContext<ExecutionContext>();
 /** One database client and auth instance per request, shared by every loader in that request. */
 export const servicesContext = createContext<{ db: Db; auth: Auth } | null>(null);
+/** Per-request CSP nonce, carried to entry.server.tsx and the root route. */
+export const nonceContext = createContext<string>("");

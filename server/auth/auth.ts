@@ -19,9 +19,22 @@ export function createAuth(db: Db, env: AppEnv) {
 		emailAndPassword: {
 			enabled: true,
 			minPasswordLength: 12,
-			// Self-serve signup is phase 8. Until then accounts are created by invitation
-			// or by the seed script, so open registration is off.
-			disableSignUp: env.APP_ENV === "production",
+			// Self-serve signup is phase 8. Until then accounts come from invitations (which
+			// call signUpEmail server-side) and the seed script. The public HTTP endpoint is
+			// blocked in server/api/app.ts in every environment; `disableSignUp` is not used
+			// because it would also break invitation acceptance.
+		},
+		rateLimit: {
+			// Off in development and test; the route tests switch it on explicitly.
+			enabled: env.APP_ENV === "staging" || env.APP_ENV === "production",
+			storage: "database",
+			window: 10,
+			max: 60,
+			customRules: {
+				// Credential guessing: 10 attempts a minute per IP, then 429.
+				"/sign-in/email": { window: 60, max: 10 },
+				"/request-password-reset": { window: 60, max: 5 },
+			},
 		},
 		user: {
 			additionalFields: {
@@ -35,6 +48,9 @@ export function createAuth(db: Db, env: AppEnv) {
 		advanced: {
 			database: { generateId: "uuid" },
 			useSecureCookies: env.APP_ENV !== "development" && env.APP_ENV !== "test",
+			// Cloudflare sets cf-connecting-ip from the real client; x-forwarded-for is
+			// client-controlled and must not be trusted.
+			ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
 		},
 		trustedOrigins: [env.APP_ORIGIN],
 	});

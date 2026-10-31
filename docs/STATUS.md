@@ -105,10 +105,30 @@ on desktop, drag to reschedule, waitlist.
 
 Not done: spending from recorded payments (phase 5), marketing consent export, CSV import.
 
-## Next: launch checklist and the pilot
+## Launch readiness — code side done, accounts pending
 
-Needs the user's accounts (Neon, Cloudflare Hyperdrive and DNS, Resend) before staging can exist. See
-`docs/HANDOFF.md` for the order.
+- Security headers on every response (`server/http/security.ts`): nonce-based CSP for scripts,
+  HSTS, nosniff, frame-ancestors none, referrer and permissions policies. The nonce flows
+  Worker → `entry.server.tsx` → root `<Scripts>`; verified in a browser that hydration and
+  client-side navigation work under the policy with no violations.
+- Sign-in rate limited by Better Auth with counters in `rate_limits` (migration 0006), keyed by
+  `cf-connecting-ip`: 10 attempts a minute per IP, then 429. Memory storage would have been
+  per-isolate and useless on Workers.
+- The public sign-up endpoint is 404 in every environment (Hono, before Better Auth sees it).
+  The earlier `disableSignUp: production` was removed: invitations create accounts through
+  `auth.api.signUpEmail` server-side and would have failed in production. Caught by reading,
+  not by tests, which run in the test environment; now tested directly.
+- `/api/health` does a database round-trip and returns 503 without detail when it fails.
+- `scripts/smoke.ts` (`npm run smoke -- <url>`): nine outside-in checks for a deployed site.
+- `scripts/bootstrap-admin.ts`: the first platform admin on an empty production database.
+- `.github/workflows/deploy.yml`: staging on push to main (once enabled), production by hand.
+- `docs/LAUNCH.md`: the account setup, in order.
+
+Still needed from Kermit: Neon project and roles, Cloudflare Hyperdrive ids and the custom
+domains, GitHub environment secrets. Resend and Stripe are not needed for the pilot.
+
+Known gap that should land before the pilot depends on the app: there is no password reset
+(phase 6, Resend). An owner who forgets her password is locked out and the admin cannot help.
 
 ## Known gaps and decisions deferred
 

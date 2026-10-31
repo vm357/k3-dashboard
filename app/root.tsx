@@ -5,10 +5,16 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useRouteLoaderData,
 } from "react-router";
 
 import type { Route } from "./+types/root";
+import { nonceContext } from "../server/context";
 import "./app.css";
+
+export function loader({ context }: Route.LoaderArgs) {
+  return { nonce: context.get(nonceContext) };
+}
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -20,6 +26,9 @@ export const links: Route.LinksFunction = () => [
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  // Undefined while rendering a root-level error, in which case no nonce is attached
+  // and the (rare) error page's inline scripts are blocked; the page still reads.
+  const nonce = useRouteLoaderData<typeof loader>("root")?.nonce;
   return (
     <html lang="en">
       <head>
@@ -31,8 +40,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         {children}
-        <ScrollRestoration />
-        <Scripts />
+        <ScrollRestoration nonce={nonce} />
+        <Scripts nonce={nonce} />
       </body>
     </html>
   );

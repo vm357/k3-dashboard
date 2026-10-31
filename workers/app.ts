@@ -1,7 +1,8 @@
 import { createRequestHandler, RouterContextProvider } from "react-router";
 import { apiApp } from "../server/api/app";
-import { envContext, executionContext } from "../server/context";
+import { envContext, executionContext, nonceContext } from "../server/context";
 import { readEnv } from "../server/env";
+import { newNonce, withSecurityHeaders } from "../server/http/security";
 
 /**
  * Worker entry. One deployment, three handlers:
@@ -20,13 +21,15 @@ const requestHandler = createRequestHandler(
 export default {
 	async fetch(request, rawEnv, ctx) {
 		const env = readEnv(rawEnv);
+		const nonce = newNonce();
 		const { pathname } = new URL(request.url);
 		if (pathname.startsWith("/api/") || pathname.startsWith("/webhooks/")) {
-			return apiApp.fetch(request, env, ctx);
+			return withSecurityHeaders(await apiApp.fetch(request, env, ctx), env, nonce);
 		}
 		const context = new RouterContextProvider();
 		context.set(envContext, env);
 		context.set(executionContext, ctx);
-		return requestHandler(request, context);
+		context.set(nonceContext, nonce);
+		return withSecurityHeaders(await requestHandler(request, context), env, nonce);
 	},
 } satisfies ExportedHandler<Env>;

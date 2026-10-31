@@ -15,7 +15,8 @@
     "cf-typegen": "wrangler types",
     "postinstall": "wrangler types",
     "db:local": "tsx scripts/local-db.ts",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "smoke": "tsx scripts/smoke.ts"
   },
   "dependencies": {
     "better-auth": "^1.7.13",

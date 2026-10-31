@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+	bigint,
 	boolean,
 	index,
 	integer,
@@ -86,6 +87,18 @@ export const verifications = pgTable(
 	},
 	(t) => [index("verifications_identifier_idx").on(t.identifier)],
 );
+
+/**
+ * Better Auth's rate-limit counters, stored in the database because a Worker isolate's
+ * memory is neither shared nor durable. Keyed by client IP + path; rows are overwritten
+ * in place, so the table stays small.
+ */
+export const rateLimits = pgTable("rate_limits", {
+	id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+	key: text("key").notNull().unique(),
+	count: integer("count").notNull(),
+	lastRequest: bigint("last_request", { mode: "number" }).notNull(),
+});
 
 /** A plan is a row mirrored from a Stripe Product; prices live in Stripe. */
 export const plans = pgTable("plans", {

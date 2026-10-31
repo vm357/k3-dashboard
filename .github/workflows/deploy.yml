@@ -1,0 +1,63 @@
+name: Deploy
+
+# Staging deploys on every push to main once the repository variable DEPLOY_STAGING is
+# "true" (Settings → Secrets and variables → Actions → Variables). Production deploys only
+# by hand from the Actions tab, and only from main. Each environment runs its migrations
+# as the database owner first, then uploads the Worker, then smoke-tests the live URL.
+#
+# Per-environment secrets (GitHub → Settings → Environments → staging | production):
+#   DATABASE_URL             owner-role Neon connection string, for migrations only
+#   CLOUDFLARE_API_TOKEN     "Edit Cloudflare Workers" template token
+#   CLOUDFLARE_ACCOUNT_ID
+# Worker secrets (AUTH_SECRET, later RESEND_API_KEY, STRIPE_*) are set once with
+# `wrangler secret put` and are not touched here.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy
+        type: choice
+        options: [staging, production]
+        default: staging
+
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'push' && vars.DEPLOY_STAGING == 'true')
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.environment || 'staging' }}
+      url: ${{ github.event.inputs.environment == 'production' && 'https://app.kermitwebcraft.com' || 'https://staging-app.kermitwebcraft.com' }}
+    env:
+      TARGET: ${{ github.event.inputs.environment || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Refuse to deploy production from anything but main
+        if: env.TARGET == 'production' && github.ref != 'refs/heads/main'
+        run: echo "Production deploys only from main" && exit 1
+      - run: npm run typecheck
+      - run: npm test
+      - name: Migrate ${{ env.TARGET }} database
+        run: npm run db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Deploy Worker
+        run: npm run build && npx wrangler deploy --env ${{ env.TARGET }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Smoke test the live site
+        run: npx tsx scripts/smoke.ts ${{ env.TARGET == 'production' && 'https://app.kermitwebcraft.com' || 'https://staging-app.kermitwebcraft.com' }}
