@@ -17,12 +17,22 @@ Read `docs/STATUS.md` first in every working session.
 
 ## Local development
 
+No Postgres install needed. A local database runs from the repo:
+
 ```sh
 npm install
-cp .dev.vars.example .dev.vars   # fill in DATABASE_URL and AUTH_SECRET
-npm run db:migrate               # applies drizzle/ to DATABASE_URL as the owning role
-npm run dev
+cp .dev.vars.example .dev.vars   # DATABASE_URL=postgres://k3_app:k3_app@127.0.0.1:5433/postgres, any AUTH_SECRET
+npm run db:local                 # terminal 1: local Postgres (PGlite) with migrations applied, data in .local-db/
+DATABASE_URL=postgres://k3_app:k3_app@127.0.0.1:5433/postgres npm run db:seed   # once: demo salon + logins
+npm run dev                      # terminal 2
 ```
+
+Sign in at http://localhost:5173 as `lina@demo.local` (salon owner) or `admin@k3.local` (Kermit admin),
+password `demo-password-123`. The seed refuses to run outside development.
+
+Against a real Postgres (Neon), set `DATABASE_URL` to it and use `npm run db:migrate` instead of `db:local`.
+
+`node scripts/shoot.mjs` screenshots every screen at phone and desktop sizes into `lab/shots/` (needs Playwright).
 
 The app connects as the Postgres role `k3_app`, which migration `0001_grants` creates and grants.
 Point `DATABASE_URL` at a user that owns the schema for migrations; set the Hyperdrive origin
@@ -37,6 +47,8 @@ credentials to `k3_app` for the running Worker.
 | `npm run typecheck` | Wrangler types, React Router typegen, tsc |
 | `npm run db:generate` | Generate a migration from `server/db/schema` |
 | `npm run db:migrate` | Apply migrations to `DATABASE_URL` |
+| `npm run db:local` | Zero-install local Postgres with migrations applied |
+| `npm run db:seed` | Demo salon and logins (development only) |
 | `npm run build` | Production build |
 | `npm run deploy:staging` / `deploy:production` | Build and deploy the named environment |
 

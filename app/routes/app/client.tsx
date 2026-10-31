@@ -8,6 +8,7 @@ import { Avatar, Badge, Button, Card, Field, PageTitle } from "../../components/
 import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
 import { addCustomerNote, customerInput, fullName, getCustomer, updateCustomer } from "../../../server/domain/customers/service";
+import { formatDate, formatPhone } from "../../lib/format";
 
 export function meta({ loaderData }: Route.MetaArgs): Route.MetaDescriptors {
 	return [{ title: `${loaderData?.client ? fullName(loaderData.client) : "Client"} · K3 Dashboard` }];
@@ -61,7 +62,8 @@ export default function Client({ loaderData, actionData }: Route.ComponentProps)
 	const base = `/app/${data.ctx.businessSlug}`;
 	const c = loaderData.client;
 	const errors: Record<string, string | undefined> = actionData?.errors ?? {};
-	const since = new Date(c.createdAt).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+	const tz = data.business.timeZone;
+	const since = formatDate(c.createdAt, tz, "monthYear");
 
 	return (
 		<Page>
@@ -122,7 +124,7 @@ export default function Client({ loaderData, actionData }: Route.ComponentProps)
 				<ol className="flex flex-col">
 					{c.notes.map((n) => (
 						<li key={n.id} className="flex flex-col gap-1 border-b border-hairline py-3 last:border-b-0">
-							<span className="text-xs font-semibold text-ink-soft">{new Date(n.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+							<span className="text-xs font-semibold text-ink-soft">{formatDate(n.createdAt, tz)}</span>
 							<p className="text-sm leading-relaxed whitespace-pre-line">{n.body}</p>
 						</li>
 					))}
@@ -139,7 +141,7 @@ export default function Client({ loaderData, actionData }: Route.ComponentProps)
 					</div>
 					{canContact ? (
 						<>
-							<Field label="Phone" name="phone" type="tel" defaultValue={c.phone ?? ""} disabled={!canEdit} error={errors.phone} />
+							<Field label="Phone" name="phone" type="tel" defaultValue={formatPhone(c.phone)} disabled={!canEdit} error={errors.phone} />
 							<Field label="Email" name="email" type="email" defaultValue={c.email ?? ""} disabled={!canEdit} error={errors.email} />
 						</>
 					) : (

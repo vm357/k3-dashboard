@@ -57,7 +57,9 @@ Done (tests: `npm test`, 52 passing locally on 2026-10-28; CI not yet run):
 - Domain tests (14) covering cross-tenant probes for every new table, permission gates, validation
 
 Gate check: an owner can configure a real salon end to end (services, staff with hours, opening hours,
-clients) and an employee sees only what their keys allow. Met in tests; not yet seen in a browser.
+clients) and an employee sees only what their keys allow. Met in tests and confirmed in a browser on 2026-10-30
+(phone and desktop screenshots of every screen; fixes: parallel loaders now share one db client per request,
+hours row overflow on phones, phone number display, first-name sort, hydration-safe date formatting).
 
 ## Phase 3: Appointments and calendar — next
 

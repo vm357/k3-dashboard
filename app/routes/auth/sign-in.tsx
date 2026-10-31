@@ -57,12 +57,13 @@ export default function SignIn({ actionData }: Route.ComponentProps) {
 	const busy = nav.state !== "idle";
 	return (
 		<main className="flex min-h-dvh flex-col justify-end bg-feature lg:items-center lg:justify-center">
-			<div className="hidden px-6 pb-8 text-on-dark lg:block lg:pb-0 lg:pr-16">
-				<p className="text-sm text-on-dark-soft">K3 Dashboard</p>
+			<div className="flex flex-1 flex-col items-start justify-end gap-2 px-6 pb-8 text-on-dark lg:flex-none lg:items-center lg:justify-center lg:pb-0 lg:pr-16">
+				<span aria-hidden="true" className="flex h-12 w-12 items-center justify-center rounded-full bg-card text-base font-extrabold text-heading">K3</span>
+				<p className="text-lg font-bold">K3 Dashboard</p>
+				<p className="text-sm text-on-dark-soft">Appointments and clients, by Kermit Webcraft</p>
 			</div>
 			<section className="w-full rounded-t-[20px] bg-canvas px-5 pt-7 pb-10 shadow-nav lg:max-w-md lg:rounded-card lg:p-8">
 				<div className="mb-6 flex flex-col gap-1">
-					<span className="text-sm text-ink-soft">K3 Dashboard</span>
 					<h1 className="text-[28px] font-bold leading-tight text-heading">Sign in</h1>
 				</div>
 				<Form method="post" className="flex flex-col gap-4" noValidate>

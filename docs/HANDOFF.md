@@ -18,10 +18,11 @@ migrations from zero on Postgres 17, the test suite, and a production build.
 
 ```sh
 npm install
-cp .dev.vars.example .dev.vars        # set DATABASE_URL and AUTH_SECRET (openssl rand -base64 32)
-npm run db:migrate                    # as a role that owns the schema
-npm test                              # 20 tests, PGlite, no database needed
-npm run dev
+cp .dev.vars.example .dev.vars        # DATABASE_URL=postgres://k3_app:k3_app@127.0.0.1:5433/postgres, any AUTH_SECRET
+npm run db:local                      # terminal 1: local Postgres, no install
+DATABASE_URL=postgres://k3_app:k3_app@127.0.0.1:5433/postgres npm run db:seed
+npm run dev                           # terminal 2, then sign in as lina@demo.local / demo-password-123
+npm test                              # 52 tests, no database needed
 ```
 
 `DATABASE_URL` is used for migrations and local dev. The running Worker in staging and

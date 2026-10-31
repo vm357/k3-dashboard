@@ -66,7 +66,7 @@ export async function listCustomers(db: Db, ctx: TenantCtx, opts: { query?: stri
 			})
 			.from(customers)
 			.where(where)
-			.orderBy(asc(customers.lastName), asc(customers.firstName))
+			.orderBy(asc(customers.firstName), asc(customers.lastName))
 			.limit(limit);
 		return rows.map((r) => redact(ctx, r));
 	});

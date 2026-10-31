@@ -28,6 +28,7 @@ export function createDb(env: AppEnv): Db {
 		}
 		return drizzle(client, { schema }) as unknown as Db;
 	}
+	// One request, one connection; loaders within a request share it through servicesContext.
 	const client = postgres(url, { prepare: false, max: 1 });
 	return drizzle(client, { schema }) as unknown as Db;
 }

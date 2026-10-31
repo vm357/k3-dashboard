@@ -1,5 +1,7 @@
 import { createContext } from "react-router";
 import type { AppEnv } from "./env";
+import type { Auth } from "./auth/auth";
+import type { Db } from "./db/client";
 
 /**
  * Typed keys for React Router's request context. The Worker sets them once per
@@ -9,3 +11,5 @@ import type { AppEnv } from "./env";
  */
 export const envContext = createContext<AppEnv>();
 export const executionContext = createContext<ExecutionContext>();
+/** One database client and auth instance per request, shared by every loader in that request. */
+export const servicesContext = createContext<{ db: Db; auth: Auth } | null>(null);

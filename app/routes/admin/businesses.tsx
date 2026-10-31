@@ -3,6 +3,7 @@ import type { Route } from "./+types/businesses";
 import { Avatar, Badge, Button, ButtonLink, EmptyState, PageTitle } from "../../components/ui";
 import { requireAdmin, services } from "../../../server/auth/session";
 import { listBusinesses, setBusinessStatus } from "../../../server/domain/admin/service";
+import { formatDate } from "../../lib/format";
 
 export function meta(): Route.MetaDescriptors {
 	return [{ title: "Businesses · Kermit admin" }];
@@ -45,7 +46,7 @@ export default function Businesses({ loaderData, actionData }: Route.ComponentPr
 									{b.name}
 								</Link>
 								<span className="text-sm text-ink-soft">
-									/{b.slug} · since {new Date(b.createdAt).toLocaleDateString("en-US")}
+									/{b.slug} · since {formatDate(b.createdAt, "America/New_York")}
 								</span>
 							</div>
 							<Badge variant={b.status === "active" ? "green" : "danger"}>{b.status === "active" ? "Active" : "Suspended"}</Badge>

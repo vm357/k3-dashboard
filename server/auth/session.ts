@@ -1,17 +1,22 @@
 import { redirect, type RouterContextProvider } from "react-router";
-import { envContext } from "../context";
+import { envContext, servicesContext } from "../context";
 import { createDb, type Db } from "../db/client";
 import { createAuth, type Auth } from "./auth";
 import { listMemberships, resolveTenantCtx, type AdminCtx, type TenantCtx } from "./ctx";
 
 /**
- * Per-request services for route loaders and actions. Built once per request from
- * the router context; never cached across requests.
+ * Per-request services for route loaders and actions. Built once per request and
+ * shared by every loader and action in that request (React Router runs them in
+ * parallel); never cached across requests.
  */
-export function services(context: Pick<RouterContextProvider, "get">): { db: Db; auth: Auth } {
+export function services(context: Pick<RouterContextProvider, "get" | "set">): { db: Db; auth: Auth } {
+  const existing = context.get(servicesContext);
+  if (existing) return existing;
   const env = context.get(envContext);
   const db = createDb(env);
-  return { db, auth: createAuth(db, env) };
+  const built = { db, auth: createAuth(db, env) };
+  context.set(servicesContext, built);
+  return built;
 }
 
 export interface SessionUser {

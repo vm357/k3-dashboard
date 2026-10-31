@@ -13,7 +13,9 @@
     "deploy:staging": "npm run build && wrangler deploy --env staging",
     "deploy:production": "npm run build && wrangler deploy --env production",
     "cf-typegen": "wrangler types",
-    "postinstall": "wrangler types"
+    "postinstall": "wrangler types",
+    "db:local": "tsx scripts/local-db.ts",
+    "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
     "better-auth": "^1.7.13",
@@ -38,6 +40,7 @@
     "@vitest/coverage-v8": "^5.0.5",
     "drizzle-kit": "^0.31.11",
     "tailwindcss": "^4.2.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "^8.0.3",
     "vitest": "^5.0.5",

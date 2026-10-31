@@ -118,14 +118,16 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
 					{WEEKDAYS.map((name, d) => {
 						const h = hoursByDay.get(d);
 						return (
-							<div key={d} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 border-b border-hairline py-2 last:border-b-0">
+							<div key={d} className="flex flex-col gap-2 border-b border-hairline py-2 last:border-b-0 sm:grid sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
 								<label className="flex min-h-10 items-center gap-3 text-sm font-semibold">
 									<input type="checkbox" name={`open-${d}`} defaultChecked={!!h} disabled={!editable} className="h-5 w-5 accent-[#00754a]" />
 									{name}
 								</label>
-								<input type="time" name={`opens-${d}`} defaultValue={h?.opensAt ?? "09:00"} disabled={!editable} aria-label={`${name} opens`} className="min-h-11 w-28 rounded-input border border-input-border bg-card px-2 text-sm" />
-								<span className="text-sm text-ink-soft">to</span>
-								<input type="time" name={`closes-${d}`} defaultValue={h?.closesAt ?? "17:00"} disabled={!editable} aria-label={`${name} closes`} className="min-h-11 w-28 rounded-input border border-input-border bg-card px-2 text-sm" />
+								<div className="flex items-center gap-2 pl-8 sm:contents">
+									<input type="time" name={`opens-${d}`} defaultValue={h?.opensAt ?? "09:00"} disabled={!editable} aria-label={`${name} opens`} className="min-h-11 min-w-0 flex-1 rounded-input border border-input-border bg-card px-2 text-sm sm:w-28 sm:flex-none" />
+									<span className="text-sm text-ink-soft">to</span>
+									<input type="time" name={`closes-${d}`} defaultValue={h?.closesAt ?? "17:00"} disabled={!editable} aria-label={`${name} closes`} className="min-h-11 min-w-0 flex-1 rounded-input border border-input-border bg-card px-2 text-sm sm:w-28 sm:flex-none" />
+								</div>
 							</div>
 						);
 					})}
@@ -138,7 +140,7 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
 				<h2 className="text-base font-bold">Booking rules</h2>
 				<Form method="post" className="flex flex-col gap-4">
 					<input type="hidden" name="intent" value="policy" />
-					<div className="grid grid-cols-2 gap-3">
+					<div className="grid gap-3 sm:grid-cols-2">
 						<Field label="Slot interval (minutes)" name="slotIntervalMinutes" type="number" inputMode="numeric" min={5} max={60} step={5} defaultValue={p.slotIntervalMinutes} disabled={!editable} hint="Start times are offered every N minutes" />
 						<Field label="Minimum notice (hours)" name="minNoticeHours" type="number" inputMode="numeric" min={0} defaultValue={Math.round(p.minNoticeMinutes / 60)} disabled={!editable} />
 						<Field label="Book up to (days ahead)" name="maxAdvanceDays" type="number" inputMode="numeric" min={1} max={365} defaultValue={p.maxAdvanceDays} disabled={!editable} />

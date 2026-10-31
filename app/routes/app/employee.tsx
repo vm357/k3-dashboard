@@ -7,6 +7,7 @@ import { Avatar, Badge, Button, Card, Field, PageTitle } from "../../components/
 import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
 import { listMembers } from "../../../server/domain/members/service";
+import { formatDateTimeRange } from "../../lib/format";
 import { formatMinutes, listServices } from "../../../server/domain/services/service";
 import {
 	WEEKDAYS,
@@ -158,14 +159,14 @@ export default function Employee({ loaderData, actionData }: Route.ComponentProp
 											<input type="checkbox" name={`on-${d}`} defaultChecked={on} disabled={!canManage} className="h-5 w-5 accent-[#00754a]" />
 											{name}
 										</label>
-										<div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 pl-8">
+										<div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 pl-8">
 											<input type="time" name={`start-${d}`} defaultValue={shifts[0]?.startsAt ?? "09:00"} disabled={!canManage} aria-label={`${name} start`} className="min-h-11 rounded-input border border-input-border bg-card px-2 text-sm" />
 											<span className="text-sm text-ink-soft">to</span>
 											<input type="time" name={`end-${d}`} defaultValue={shifts[0]?.endsAt ?? "17:00"} disabled={!canManage} aria-label={`${name} end`} className="min-h-11 rounded-input border border-input-border bg-card px-2 text-sm" />
 										</div>
 										<details className="pl-8" open={shifts.length > 1}>
 											<summary className="cursor-pointer text-xs font-semibold text-ink-soft">Split shift</summary>
-											<div className="mt-2 grid grid-cols-[auto_1fr_auto_1fr] items-center gap-2">
+											<div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
 												<input type="checkbox" name={`split-${d}`} defaultChecked={shifts.length > 1} disabled={!canManage} aria-label={`${name} second shift`} className="h-5 w-5 accent-[#00754a]" />
 												<input type="time" name={`start2-${d}`} defaultValue={shifts[1]?.startsAt ?? "14:00"} disabled={!canManage} aria-label={`${name} second start`} className="min-h-11 rounded-input border border-input-border bg-card px-2 text-sm" />
 												<span className="text-sm text-ink-soft">to</span>
@@ -186,7 +187,7 @@ export default function Employee({ loaderData, actionData }: Route.ComponentProp
 							{e.upcomingBlocks.map((b) => (
 								<li key={b.id} className="flex items-center justify-between gap-3 border-b border-hairline py-2 last:border-b-0">
 									<div className="flex flex-col text-sm">
-										<span className="font-semibold">{formatRange(b.startAt, b.endAt)}</span>
+										<span className="font-semibold">{formatDateTimeRange(b.startAt, b.endAt, data.business.timeZone)}</span>
 										{b.reason ? <span className="text-ink-soft">{b.reason}</span> : null}
 									</div>
 									<Form method="post">
@@ -223,9 +224,3 @@ export default function Employee({ loaderData, actionData }: Route.ComponentProp
 	);
 }
 
-function formatRange(start: Date | string, end: Date | string): string {
-	const s = new Date(start);
-	const en = new Date(end);
-	const f = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-	return `${f.format(s)} to ${f.format(en)}`;
-}

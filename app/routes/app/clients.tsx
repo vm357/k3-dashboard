@@ -6,6 +6,7 @@ import { Avatar, ButtonLink, EmptyState, PageTitle } from "../../components/ui";
 import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
 import { fullName, listCustomers } from "../../../server/domain/customers/service";
+import { formatPhone } from "../../lib/format";
 
 export function meta(): Route.MetaDescriptors {
 	return [{ title: "Clients · K3 Dashboard" }];
@@ -57,7 +58,7 @@ export default function Clients({ loaderData }: Route.ComponentProps) {
 								<Avatar name={fullName(c)} size={36} />
 								<span className="flex min-w-0 flex-1 flex-col">
 									<span className="truncate text-sm font-semibold">{fullName(c)}</span>
-									<span className="truncate text-xs text-ink-soft">{[c.phone, c.email].filter((v) => v && v !== "hidden").join(" · ") || "No contact details"}</span>
+									<span className="truncate text-xs text-ink-soft">{[c.phone === "hidden" ? null : formatPhone(c.phone), c.email === "hidden" ? null : c.email].filter(Boolean).join(" · ") || "No contact details"}</span>
 								</span>
 							</Link>
 						</li>
