@@ -8,7 +8,8 @@ import { Avatar, Badge, Button, Card, Field, PageTitle } from "../../components/
 import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
 import { addCustomerNote, customerInput, fullName, getCustomer, updateCustomer } from "../../../server/domain/customers/service";
-import { formatDate, formatPhone } from "../../lib/format";
+import { STATUS_LABEL, formatCents, formatDate, formatPhone, formatTime } from "../../lib/format";
+import { listForCustomer } from "../../../server/domain/appointments/service";
 
 export function meta({ loaderData }: Route.MetaArgs): Route.MetaDescriptors {
 	return [{ title: `${loaderData?.client ? fullName(loaderData.client) : "Client"} · K3 Dashboard` }];
@@ -20,7 +21,9 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	if (!hasPermission(ctx.role, [...ctx.permissions], "customers.view")) throw new Response("Forbidden", { status: 403 });
 	const client = await getCustomer(db, ctx, params.customerId!);
 	if (!client) throw new Response("Not found", { status: 404 });
-	return { client };
+	const visits = await listForCustomer(db, ctx, client.id);
+	const ser = (r: (typeof visits.upcoming)[number]) => ({ ...r, startAt: r.startAt.toISOString() });
+	return { client, visits: { upcoming: visits.upcoming.map(ser), past: visits.past.map(ser), lifetimeCents: visits.lifetimeCents } };
 }
 
 export async function action({ request, params, context }: Route.ActionArgs) {
@@ -80,7 +83,7 @@ export default function Client({ loaderData, actionData }: Route.ComponentProps)
 			</div>
 
 			<div className="grid grid-cols-3 gap-2.5">
-				<Link to={`${base}/calendar`} className="press flex flex-col items-center gap-1.5 rounded-card bg-cta py-3 text-xs font-bold text-on-dark">
+				<Link to={`${base}/book?client=${c.id}`} className="press flex flex-col items-center gap-1.5 rounded-card bg-cta py-3 text-xs font-bold text-on-dark">
 					Book
 				</Link>
 				{canContact && c.phone ? (
@@ -102,11 +105,24 @@ export default function Client({ loaderData, actionData }: Route.ComponentProps)
 				</section>
 			) : null}
 
-			<Card tone="feature" className="flex flex-col gap-1">
-				<span className="text-xs text-on-dark-soft">Upcoming</span>
-				<span className="text-base font-bold">Nothing booked</span>
-				<span className="text-sm text-on-dark-soft">Appointments arrive in the next build.</span>
-			</Card>
+			{loaderData.visits.upcoming.length > 0 ? (
+				<Card tone="feature" className="flex items-center justify-between gap-3">
+					<div className="flex flex-col gap-0.5">
+						<span className="text-xs text-on-dark-soft">Upcoming</span>
+						<span className="text-base font-bold">{formatDate(loaderData.visits.upcoming[0].startAt, tz, "full")} · {formatTime(loaderData.visits.upcoming[0].startAt, tz)}</span>
+						<span className="text-sm text-on-dark-soft">{loaderData.visits.upcoming[0].services.join(" + ")} · {formatCents(loaderData.visits.upcoming[0].priceCents)}</span>
+					</div>
+					<Link to={`${base}/appointments/${loaderData.visits.upcoming[0].id}`} className="press rounded-pill border border-on-dark px-4 py-2 text-sm font-semibold">Open</Link>
+				</Card>
+			) : (
+				<Card tone="feature" className="flex items-center justify-between gap-3">
+					<div className="flex flex-col gap-0.5">
+						<span className="text-xs text-on-dark-soft">Upcoming</span>
+						<span className="text-base font-bold">Nothing booked</span>
+					</div>
+					<Link to={`${base}/book?client=${c.id}`} className="press rounded-pill bg-card px-4 py-2 text-sm font-semibold text-heading">Book</Link>
+				</Card>
+			)}
 
 			<Card className="flex flex-col gap-3">
 				<div className="flex items-center justify-between">
@@ -130,6 +146,30 @@ export default function Client({ loaderData, actionData }: Route.ComponentProps)
 					))}
 				</ol>
 			</Card>
+
+			<section className="flex flex-col gap-2">
+				<div className="flex items-baseline justify-between px-0.5">
+					<h2 className="text-base font-bold">History</h2>
+					<span className="text-sm text-ink-soft">{formatCents(loaderData.visits.lifetimeCents)} lifetime</span>
+				</div>
+				{loaderData.visits.past.length === 0 ? (
+					<p className="px-0.5 text-sm text-ink-soft">No visits yet.</p>
+				) : (
+					<ol className="flex flex-col overflow-hidden rounded-card bg-card shadow-card">
+						{loaderData.visits.past.map((v) => (
+							<li key={v.id}>
+								<Link to={`${base}/appointments/${v.id}`} className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3 last:border-b-0">
+									<span className="flex min-w-0 flex-col gap-0.5">
+										<span className="text-sm font-semibold">{formatDate(v.startAt, tz)}</span>
+										<span className="truncate text-xs text-ink-soft">{v.services.join(" + ")}{v.status !== "completed" ? ` · ${STATUS_LABEL[v.status]}` : ""}</span>
+									</span>
+									<span className="text-sm font-semibold">{formatCents(v.priceCents)}</span>
+								</Link>
+							</li>
+						))}
+					</ol>
+				)}
+			</section>
 
 			<details className="rounded-card bg-card shadow-card">
 				<summary className="cursor-pointer px-4 py-3 text-base font-bold">Details</summary>

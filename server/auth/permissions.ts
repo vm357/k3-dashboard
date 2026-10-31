@@ -42,5 +42,14 @@ export const DEFAULT_EMPLOYEE_PERMISSIONS: PermissionKey[] = [
 
 /** Browser-safe check used by pages; the server-side `can(ctx, key)` in ctx.ts is the authority. */
 export function hasPermission(role: "owner" | "employee", permissions: readonly string[], key: PermissionKey): boolean {
-	return role === "owner" || permissions.includes(key);
+	if (role === "owner" || permissions.includes(key)) return true;
+	const implied: Record<string, PermissionKey[]> = {
+		"calendar.view_all": ["calendar.view_own"],
+		"appointments.manage_all": ["appointments.manage_own", "calendar.view_all", "calendar.view_own"],
+		"customers.edit": ["customers.view"],
+		"services.manage": ["services.view"],
+		"team.manage": ["team.view"],
+		"settings.edit": ["settings.view"],
+	};
+	return permissions.some((held) => implied[held]?.includes(key));
 }

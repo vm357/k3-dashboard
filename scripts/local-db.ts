@@ -1,4 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
+import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
@@ -17,7 +18,7 @@ import path from "node:path";
 const port = Number(process.env.LOCAL_DB_PORT ?? 5433);
 const dir = path.resolve(process.cwd(), ".local-db");
 
-const pglite = new PGlite(dir);
+const pglite = new PGlite(dir, { extensions: { btree_gist } });
 const db = drizzle(pglite);
 await migrate(db, { migrationsFolder: path.resolve(process.cwd(), "drizzle") });
 await db.execute(sql`alter role k3_app with login password 'k3_app'`);

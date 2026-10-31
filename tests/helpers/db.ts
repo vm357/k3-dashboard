@@ -1,4 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
+import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
@@ -13,7 +14,7 @@ import { withBypass } from "../../server/db/tenant";
  * exactly like the Worker's connection.
  */
 export async function createTestDb(): Promise<{ db: Db; close: () => Promise<void> }> {
-	const client = new PGlite();
+	const client = new PGlite({ extensions: { btree_gist } });
 	const pglite = drizzle(client, { schema });
 	await migrate(pglite, { migrationsFolder: path.resolve(process.cwd(), "drizzle") });
 	await pglite.execute(sql`set role k3_app`);

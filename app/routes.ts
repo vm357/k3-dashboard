@@ -13,6 +13,8 @@ export default [
       ...prefix(":business", [
         index("routes/app/today.tsx"),
         route("calendar", "routes/app/calendar.tsx"),
+        route("book", "routes/app/book.tsx"),
+        route("appointments/:appointmentId", "routes/app/appointment.tsx"),
         route("clients", "routes/app/clients.tsx"),
         route("settings", "routes/app/settings.tsx"),
         route("services", "routes/app/services.tsx", [route(":serviceId", "routes/app/service-edit.tsx")]),

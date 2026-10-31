@@ -31,8 +31,20 @@ export class ForbiddenError extends Error {
 	}
 }
 
+/** Broader keys imply narrower ones so an owner granting "everyone's" never has to also tick "own". */
+const IMPLIED: Partial<Record<PermissionKey, PermissionKey[]>> = {
+	"calendar.view_all": ["calendar.view_own"],
+	"appointments.manage_all": ["appointments.manage_own", "calendar.view_all", "calendar.view_own"],
+	"customers.edit": ["customers.view"],
+	"services.manage": ["services.view"],
+	"team.manage": ["team.view"],
+	"settings.edit": ["settings.view"],
+};
+
 export function can(ctx: TenantCtx, key: PermissionKey): boolean {
-	return ctx.role === "owner" || ctx.permissions.has(key);
+	if (ctx.role === "owner" || ctx.permissions.has(key)) return true;
+	for (const [held, implied] of Object.entries(IMPLIED)) if (ctx.permissions.has(held as PermissionKey) && implied?.includes(key)) return true;
+	return false;
 }
 
 export function require(ctx: TenantCtx, key: PermissionKey): void {

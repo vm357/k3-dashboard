@@ -61,11 +61,37 @@ clients) and an employee sees only what their keys allow. Met in tests and confi
 (phone and desktop screenshots of every screen; fixes: parallel loaders now share one db client per request,
 hours row overflow on phones, phone number display, first-name sort, hydration-safe date formatting).
 
-## Phase 3: Appointments and calendar — next
+## Phase 3: Appointments and calendar — done
 
-Availability computation from hours, staff availability, time blocks and the exclusion constraint;
-appointments and appointment_services tables; day and week calendar; the booking sheet from the canvas;
-statuses and transitions; hold expiry cron.
+Done (tests: `npm test`, 74 passing locally on 2026-10-30; booking flow walked in a browser at phone width):
+
+- Migrations `0004_appointments`, `0005_appointments_exclusion`: appointments (status and payment state as
+  separate axes, frozen totals), appointment_services (prices and durations frozen at booking), status history;
+  `EXCLUDE USING gist` on employee + tstzrange for live statuses with btree_gist; RLS on all three
+- Scheduling: zone-aware time helpers (`zonedTimeToUtc`, DST gap and overlap handled) and a pure availability
+  engine (hours ∩ staff availability, minus blocks and live appointments with buffers, grid anchored to local
+  midnight, min notice and max advance); 10 engine tests including the fall-back DST day
+- Appointments service: `listSlots`, `bookAppointment` (server-side fit check, inline walk-in client creation,
+  exclusion violation mapped to "slot taken"), status machine with history, `reschedule` as a linked new row,
+  `listDay`, `getAppointment`, `listForCustomer`, `expireHolds`; employee access by manage_own / manage_all;
+  broader permission keys now imply narrower ones
+- Concurrency test over the real wire protocol: 50 simultaneous bookings on one slot yield exactly one; the
+  database alone rejects an overlapping insert
+- Screens: booking sheet (state in the URL, every tap a link, client search or inline new client, service pills,
+  14-day chips, times from the engine, one tap books), appointment detail (check in, done, no-show, cancel with
+  reason, move to another time, history), Calendar day view with prev/next and date jump, Today with the next-up
+  card, timeline, open gaps as "Book +", and an "N to mark done" nudge for visits never closed out; client
+  profile shows upcoming and history with lifetime spend from completed visits
+- `scripts/seed-appointments.ts` books a believable day for the demo salon relative to today
+
+Not done (deferred to later phases as planned): online booking holds and hold-expiry cron (phase 7), week view
+on desktop, drag to reschedule, waitlist.
+
+## Phase 4: CRM — next
+
+Customer profiles are largely in place from phases 2 and 3. Remaining: spending from recorded payments (after
+phase 5), duplicate detection and merge, basic reports (appointments by period, employee, service). Then the
+launch checklist and the pilot.
 
 ## Known gaps and decisions deferred
 

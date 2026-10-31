@@ -34,7 +34,7 @@ export default function BusinessLayout({ loaderData }: Route.ComponentProps) {
 			businessName={loaderData.business.name}
 			userName={loaderData.user.name}
 			action={
-				<ButtonLink to={`${base}/calendar`} className="w-full">
+				<ButtonLink to={`${base}/book`} className="w-full">
 					New appointment
 				</ButtonLink>
 			}

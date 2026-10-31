@@ -29,6 +29,20 @@
       "when": 1793214059982,
       "tag": "0003_dashboard_core",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793414730150,
+      "tag": "0004_appointments",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793414731056,
+      "tag": "0005_appointments_exclusion",
+      "breakpoints": true
     }
   ]
 }

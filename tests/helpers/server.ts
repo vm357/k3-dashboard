@@ -1,4 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
+import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
@@ -32,7 +33,7 @@ export interface RouteHarness {
 const PASSWORD = "correct horse battery staple";
 
 export async function createRouteHarness(): Promise<RouteHarness> {
-	const pglite = new PGlite();
+	const pglite = new PGlite({ extensions: { btree_gist } });
 	const sudo = drizzle(pglite, { schema });
 	await migrate(sudo, { migrationsFolder: path.resolve(process.cwd(), "drizzle") });
 	await sudo.execute(sql`alter role k3_app with login password 'k3_app'`);
