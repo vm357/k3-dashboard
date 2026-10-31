@@ -1,16 +1,17 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router";
-import { IconCalendar, IconClients, IconSettings, IconToday } from "./icons";
+import { IconCalendar, IconClients, IconReports, IconSettings, IconToday } from "./icons";
 
 /**
  * The business shell: bottom bar on phones, left sidebar from 1024px up (ADR 004).
- * The same four destinations in both; `base` is `/app/<slug>`.
+ * Four destinations on the phone bar; the sidebar adds Reports (phones reach it from Settings).
  */
 const items = [
-  { to: "", label: "Today", Icon: IconToday, end: true },
-  { to: "/calendar", label: "Calendar", Icon: IconCalendar, end: false },
-  { to: "/clients", label: "Clients", Icon: IconClients, end: false },
-  { to: "/settings", label: "Settings", Icon: IconSettings, end: false },
+  { to: "", label: "Today", Icon: IconToday, end: true, phone: true },
+  { to: "/calendar", label: "Calendar", Icon: IconCalendar, end: false, phone: true },
+  { to: "/clients", label: "Clients", Icon: IconClients, end: false, phone: true },
+  { to: "/reports", label: "Reports", Icon: IconReports, end: false, phone: false },
+  { to: "/settings", label: "Settings", Icon: IconSettings, end: false, phone: true },
 ];
 
 export function AppShell({
@@ -68,7 +69,7 @@ export function AppShell({
         aria-label="Main"
         className="fixed inset-x-0 bottom-0 z-20 grid h-20 grid-cols-4 bg-card px-3 pt-2 pb-5 shadow-nav lg:hidden"
       >
-        {items.map(({ to, label, Icon, end }) => (
+        {items.filter((i) => i.phone).map(({ to, label, Icon, end }) => (
           <NavLink
             key={label}
             to={`${base}${to}`}

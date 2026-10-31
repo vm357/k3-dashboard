@@ -5,7 +5,10 @@ import { Page } from "../../components/shell";
 import { Avatar, ButtonLink, EmptyState, PageTitle } from "../../components/ui";
 import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
+import { findDuplicates } from "../../../server/domain/customers/merge";
 import { fullName, listCustomers } from "../../../server/domain/customers/service";
+import { dueForVisit } from "../../../server/domain/reports/service";
+import { DueList } from "../../components/due-list";
 import { formatPhone } from "../../lib/format";
 
 export function meta(): Route.MetaDescriptors {
@@ -17,14 +20,20 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const { ctx } = await requireTenant(db, auth, request, params.business!);
 	if (!hasPermission(ctx.role, [...ctx.permissions], "customers.view")) throw new Response("Forbidden", { status: 403 });
 	const q = new URL(request.url).searchParams.get("q") ?? "";
-	const clients = await listCustomers(db, ctx, { query: q, limit: 100 });
-	return { clients, q };
+	const canEdit = hasPermission(ctx.role, [...ctx.permissions], "customers.edit");
+	const [clients, due, dupes] = await Promise.all([
+		listCustomers(db, ctx, { query: q, limit: 100 }),
+		q ? [] : dueForVisit(db, ctx, new Date(), 5),
+		q || !canEdit ? 0 : findDuplicates(db, ctx).then((d) => d.length),
+	]);
+	return { clients, q, due: due.map((x) => ({ ...x, lastVisit: x.lastVisit.toISOString() })), dupes };
 }
 
 export default function Clients({ loaderData }: Route.ComponentProps) {
 	const data = useRouteLoaderData<typeof layoutLoader>("routes/app/business-layout")!;
 	const canEdit = hasPermission(data.ctx.role, data.ctx.permissions, "customers.edit");
 	const base = `/app/${data.ctx.businessSlug}/clients`;
+	const tz = data.business.timeZone;
 
 	return (
 		<Page>
@@ -43,6 +52,15 @@ export default function Clients({ loaderData }: Route.ComponentProps) {
 				</Form>
 				{canEdit ? <ButtonLink to={`${base}/new`}>Add</ButtonLink> : null}
 			</div>
+
+			{loaderData.dupes > 0 ? (
+				<Link to={`${base}/duplicates`} className="press flex items-center justify-between rounded-card border border-input-border bg-card px-4 py-3 text-sm">
+					<span><span className="font-semibold">{loaderData.dupes} possible {loaderData.dupes === 1 ? "duplicate" : "duplicates"}</span> <span className="text-ink-soft">· same phone, email or name</span></span>
+					<span className="font-semibold text-cta">Review</span>
+				</Link>
+			) : null}
+
+			{loaderData.due.length > 0 ? <DueList due={loaderData.due} base={`/app/${data.ctx.businessSlug}`} timeZone={tz} /> : null}
 
 			{loaderData.clients.length === 0 ? (
 				loaderData.q ? (

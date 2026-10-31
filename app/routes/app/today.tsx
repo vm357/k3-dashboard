@@ -4,6 +4,7 @@ import type { loader as layoutLoader } from "./business-layout";
 import { IconCheck, IconPlus } from "../../components/icons";
 import { Page } from "../../components/shell";
 import { Badge, ButtonLink, Card, PageTitle } from "../../components/ui";
+import { DueList } from "../../components/due-list";
 import { STATUS_LABEL, formatDate, formatMinutes, formatTime, formatTimeRange, relativeStart } from "../../lib/format";
 import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
@@ -11,6 +12,7 @@ import { listDay } from "../../../server/domain/appointments/service";
 import { getHours } from "../../../server/domain/businesses/hours";
 import { getBusiness } from "../../../server/domain/businesses/service";
 import { listCustomers } from "../../../server/domain/customers/service";
+import { dueForVisit } from "../../../server/domain/reports/service";
 import { formatLocalDate, localDateOf, zonedTimeToUtc } from "../../../server/domain/scheduling/time";
 import { listServices } from "../../../server/domain/services/service";
 import { listEmployees } from "../../../server/domain/staff/service";
@@ -34,12 +36,14 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const today = localDateOf(now, tz);
 	const iso = formatLocalDate(today);
 
-	const [svc, staff, hours, clients, day] = await Promise.all([
+	const canSeeClients = hasPermission(ctx.role, p, "customers.view");
+	const [svc, staff, hours, clients, day, due] = await Promise.all([
 		hasPermission(ctx.role, p, "services.view") ? listServices(db, ctx) : { services: [] },
 		hasPermission(ctx.role, p, "team.view") ? listEmployees(db, ctx) : [],
 		owner ? getHours(db, ctx) : [],
-		hasPermission(ctx.role, p, "customers.view") ? listCustomers(db, ctx, { limit: 1 }) : [],
+		canSeeClients ? listCustomers(db, ctx, { limit: 1 }) : [],
 		hasPermission(ctx.role, p, "calendar.view_own") ? listDay(db, ctx, iso) : null,
+		canSeeClients ? dueForVisit(db, ctx, now, 3) : [],
 	]);
 
 	const setup = owner
@@ -70,7 +74,19 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		}
 		if (close - cursor >= 30 * 60000) gaps.push({ startAt: new Date(cursor).toISOString(), endAt: new Date(close).toISOString() });
 	}
-	return { setup, items, next, gaps, unfinished: unfinished.map((i) => i.id), seen, timeZone: tz, now: now.toISOString(), count: items.length, closedToday: owner && hours.length > 0 && !todaysHours };
+	return {
+		setup,
+		items,
+		next,
+		gaps,
+		unfinished: unfinished.map((i) => i.id),
+		seen,
+		timeZone: tz,
+		now: now.toISOString(),
+		count: items.length,
+		closedToday: owner && hours.length > 0 && !todaysHours,
+		due: due.map((x) => ({ ...x, lastVisit: x.lastVisit.toISOString() })),
+	};
 }
 
 export default function Today({ loaderData }: Route.ComponentProps) {
@@ -159,6 +175,8 @@ export default function Today({ loaderData }: Route.ComponentProps) {
 			) : d.setup && remaining === 0 ? (
 				<p className="px-0.5 text-sm text-ink-soft">Nothing booked today.</p>
 			) : null}
+
+			{d.due.length > 0 ? <DueList due={d.due} base={base} timeZone={tz} compact /> : null}
 
 			<Link to={`${base}/book`} aria-label="New appointment" className="press fixed right-5 bottom-24 z-10 flex h-14 w-14 items-center justify-center rounded-full bg-cta text-on-dark shadow-float lg:hidden">
 				<IconPlus width={26} height={26} />

@@ -16,6 +16,8 @@ export default [
         route("book", "routes/app/book.tsx"),
         route("appointments/:appointmentId", "routes/app/appointment.tsx"),
         route("clients", "routes/app/clients.tsx"),
+        route("clients/duplicates", "routes/app/duplicates.tsx"),
+        route("reports", "routes/app/reports.tsx"),
         route("settings", "routes/app/settings.tsx"),
         route("services", "routes/app/services.tsx", [route(":serviceId", "routes/app/service-edit.tsx")]),
         route("team", "routes/app/team.tsx"),

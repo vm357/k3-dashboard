@@ -87,11 +87,28 @@ Done (tests: `npm test`, 74 passing locally on 2026-10-30; booking flow walked i
 Not done (deferred to later phases as planned): online booking holds and hold-expiry cron (phase 7), week view
 on desktop, drag to reschedule, waitlist.
 
-## Phase 4: CRM — next
+## Phase 4: CRM — done
 
-Customer profiles are largely in place from phases 2 and 3. Remaining: spending from recorded payments (after
-phase 5), duplicate detection and merge, basic reports (appointments by period, employee, service). Then the
-launch checklist and the pilot.
+- Duplicate detection (`server/domain/customers/merge.ts`): pairs with the same phone, email or full name,
+  shown at `/clients/duplicates` with a visit count per record. Merge keeps one record, moves the other's
+  appointments and notes, fills in missing contact details, retires the other record (`merged_into_id`) and
+  audits it. Nothing merges on its own. Needs `customers.edit`.
+- Reports (`server/domain/reports/service.ts`, `/reports`): this week, this month, last 30 or 90 days, in the
+  business time zone. Completed visits, revenue (price of completed visits; collected money comes with phase 5),
+  new clients, no-shows and cancellations, by day, by service, by staff (hidden for a one-person salon), top
+  clients. Needs `reports.view`; on the desktop sidebar, and under Settings on phones.
+- "Due for a visit": clients past their own median gap between completed visits (6 weeks when there is only
+  one) with nothing booked ahead. Top three on Today, five on Clients, each with a Book shortcut.
+- `scripts/seed-history.ts` adds three months of demo history and one duplicate; idempotent.
+- Fixed on the way: a correlated subquery where Drizzle rendered `customers.id` as a bare `"id"` (counted zero
+  for everyone). Written by hand now, with a test on the count.
+
+Not done: spending from recorded payments (phase 5), marketing consent export, CSV import.
+
+## Next: launch checklist and the pilot
+
+Needs the user's accounts (Neon, Cloudflare Hyperdrive and DNS, Resend) before staging can exist. See
+`docs/HANDOFF.md` for the order.
 
 ## Known gaps and decisions deferred
 

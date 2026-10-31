@@ -19,3 +19,6 @@ worker-configuration.d.ts
 # Local PGlite dev database
 /.local-db/
 /lab/
+
+# local logs
+*.log

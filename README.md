@@ -24,6 +24,8 @@ npm install
 cp .dev.vars.example .dev.vars   # DATABASE_URL=postgres://k3_app:k3_app@127.0.0.1:5433/postgres, any AUTH_SECRET
 npm run db:local                 # terminal 1: local Postgres (PGlite) with migrations applied, data in .local-db/
 DATABASE_URL=postgres://k3_app:k3_app@127.0.0.1:5433/postgres npm run db:seed   # once: demo salon + logins
+DATABASE_URL=postgres://k3_app:k3_app@127.0.0.1:5433/postgres npx tsx scripts/seed-appointments.ts   # optional: today's bookings
+DATABASE_URL=postgres://k3_app:k3_app@127.0.0.1:5433/postgres npx tsx scripts/seed-history.ts        # optional: 3 months of history
 npm run dev                      # terminal 2
 ```
 

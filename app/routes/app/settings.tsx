@@ -73,6 +73,7 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 export default function Settings({ loaderData, actionData }: Route.ComponentProps) {
 	const data = useRouteLoaderData<typeof layoutLoader>("routes/app/business-layout")!;
 	const editable = hasPermission(data.ctx.role, data.ctx.permissions, "settings.edit");
+	const canReport = hasPermission(data.ctx.role, data.ctx.permissions, "reports.view");
 	const base = `/app/${data.ctx.businessSlug}`;
 	const errors: Record<string, string | undefined> = actionData?.errors ?? {};
 	const hoursByDay = new Map(loaderData.hours.map((h) => [h.weekday, h]));
@@ -97,6 +98,15 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
 					</div>
 					<ButtonLink to={`${base}/team`} variant="outlined" size="sm">Open</ButtonLink>
 				</Card>
+				{canReport ? (
+					<Card className="flex items-center justify-between gap-3">
+						<div className="flex flex-col">
+							<h2 className="text-base font-bold">Reports</h2>
+							<span className="text-sm text-ink-soft">Visits, revenue, no-shows by week or month.</span>
+						</div>
+						<ButtonLink to={`${base}/reports`} variant="outlined" size="sm">Open</ButtonLink>
+					</Card>
+				) : null}
 			</div>
 
 			<Card className="flex flex-col gap-4">

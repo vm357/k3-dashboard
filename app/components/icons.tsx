@@ -59,3 +59,8 @@ export const IconCheck = (p: ComponentProps<"svg">) => (
     <path d="M5 12l5 5L20 7" />
   </Icon>
 );
+export const IconReports = (p: ComponentProps<"svg">) => (
+	<Icon {...p}>
+		<path d="M4 19h16M7 16V9M12 16V5M17 16v-6" />
+	</Icon>
+);

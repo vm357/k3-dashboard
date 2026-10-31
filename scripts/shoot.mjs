@@ -41,6 +41,8 @@ for (const [name, viewport] of Object.entries(sizes)) {
 		["07-client-new", `${b}/clients/new`],
 		["09-settings", `${b}/settings`],
 		["10-calendar", `${b}/calendar`],
+		["13-reports", `${b}/reports?period=last90`],
+		["14-duplicates", `${b}/clients/duplicates`],
 	];
 	for (const [label, path] of screens) {
 		await page.goto(`${base}${path}`);

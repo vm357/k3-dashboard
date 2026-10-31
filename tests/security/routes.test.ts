@@ -7,6 +7,8 @@ import { loader as signInLoader, action as signInAction } from "../../app/routes
 import { loader as homeLoader } from "../../app/routes/home";
 import { action as settingsAction } from "../../app/routes/app/settings";
 import { loader as teamLoader } from "../../app/routes/app/team";
+import { loader as reportsLoader } from "../../app/routes/app/reports";
+import { loader as duplicatesLoader, action as duplicatesAction } from "../../app/routes/app/duplicates";
 
 /**
  * The route layer, exercised the way a browser would: real Better Auth sessions over
@@ -107,6 +109,21 @@ describe("routes", () => {
 		expect((await status(() => adminLayout(args(req("/admin", { cookie: ownerA.cookie }))))).status).toBe(404);
 		expect((await status(() => adminLayout(args(req("/admin", { cookie: outsider.cookie }))))).status).toBe(404);
 		expect((await status(() => adminLayout(args(req("/admin", { cookie: admin.cookie }))))).status).toBe(200);
+	});
+
+	it("reports and duplicates are owner screens: 403 for the default employee, 200 for the owner", async () => {
+		expect((await status(() => reportsLoader(args(req("/app/salon-a/reports?period=week", { cookie: employeeA.cookie }), { business: "salon-a" })))).status).toBe(403);
+		expect((await status(() => duplicatesLoader(args(req("/app/salon-a/clients/duplicates", { cookie: employeeA.cookie }), { business: "salon-a" })))).status).toBe(403);
+		const r = (await reportsLoader(args(req("/app/salon-a/reports?period=bogus", { cookie: ownerA.cookie }), { business: "salon-a" }))) as { report: { period: string; totals: { completed: number } } };
+		expect(r.report.period).toBe("month"); // unknown period falls back instead of erroring
+		expect(r.report.totals.completed).toBe(0);
+		const d = (await duplicatesLoader(args(req("/app/salon-a/clients/duplicates", { cookie: ownerA.cookie }), { business: "salon-a" }))) as { pairs: unknown[] };
+		expect(d.pairs).toEqual([]);
+		// A merge posted by an employee is refused before anything is touched.
+		const m = await status(() =>
+			duplicatesAction(args(req("/app/salon-a/clients/duplicates", { cookie: employeeA.cookie, form: { keep: "00000000-0000-0000-0000-000000000000", from: "00000000-0000-0000-0000-000000000001" } }), { business: "salon-a" })),
+		);
+		expect(m.status).toBe(403);
 	});
 
 	it("a forged or garbage cookie is treated as signed out", async () => {
