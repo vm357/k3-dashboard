@@ -22,6 +22,10 @@ const pglite = new PGlite(dir, { extensions: { btree_gist } });
 const db = drizzle(pglite);
 await migrate(db, { migrationsFolder: path.resolve(process.cwd(), "drizzle") });
 await db.execute(sql`alter role k3_app with login password 'k3_app'`);
+// The socket server ignores the connecting user, so every connection shares this one
+// session: switch it to the application role now, and local dev runs under row-level
+// security exactly as production does. Migrations above ran as the owner, as they must.
+await db.execute(sql`set role k3_app`);
 
 const server = new PGLiteSocketServer({ db: pglite, port, host: "127.0.0.1" });
 await server.start();

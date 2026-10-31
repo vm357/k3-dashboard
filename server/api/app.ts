@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import type { AppEnv } from "../env";
 import { createAuth } from "../auth/auth";
 import { createDb } from "../db/client";
+import { checkIsolation } from "../db/isolation";
 
 /**
  * Hono application for everything that is not a dashboard page:
@@ -16,15 +17,24 @@ import { createDb } from "../db/client";
  */
 export const apiApp = new Hono<{ Bindings: AppEnv }>();
 
-/** Liveness plus a database round-trip. 503 with no detail when the database is unreachable. */
+/**
+ * Liveness, a database round-trip, and proof that row-level security applies to this
+ * connection (server/db/isolation.ts). 503 with a reason code and nothing else on failure.
+ */
 apiApp.get("/api/health", async (c) => {
 	try {
 		const db = createDb(c.env);
-		await Promise.race([db.execute(sql`select 1`), new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000))]);
+		const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000));
+		await Promise.race([db.execute(sql`select 1`), timeout]);
+		const isolation = await Promise.race([checkIsolation(db), timeout]);
+		if (!isolation.ok) {
+			console.error(JSON.stringify({ level: "error", route: "/api/health", message: `isolation check failed: ${isolation.reason}` }));
+			return c.json({ ok: false, env: c.env.APP_ENV, reason: isolation.reason }, 503);
+		}
 		return c.json({ ok: true, env: c.env.APP_ENV });
 	} catch (err) {
 		console.error(JSON.stringify({ level: "error", route: "/api/health", message: (err as Error).message }));
-		return c.json({ ok: false, env: c.env.APP_ENV }, 503);
+		return c.json({ ok: false, env: c.env.APP_ENV, reason: "database" }, 503);
 	}
 });
 

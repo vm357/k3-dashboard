@@ -53,6 +53,9 @@ export async function createRouteHarness(): Promise<RouteHarness> {
 	context.set(executionContext, { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext);
 
 	const db = createDb(env);
+	// The PGlite socket ignores the URL's user, so switch the shared connection to the
+	// application role ourselves; the route layer must run under row-level security too.
+	await db.execute(sql`set role k3_app`);
 	const auth = createAuth(db, env);
 
 	async function signIn(email: string, password = PASSWORD): Promise<string> {

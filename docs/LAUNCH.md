@@ -10,18 +10,34 @@ admin sends by hand until phase 6), Stripe (phase 5 and 8).
 
 ## 1. Neon (database)
 
-1. Create a project, Postgres 17, region closest to the salon (US East for New Jersey).
-2. Production uses the `main` branch. Create a branch `staging` from it.
-3. On each branch, open the SQL editor and create the application role the Worker connects
-   as. Migrations run as the project owner; this role owns nothing, so row-level security
-   applies to everything it does:
+1. Sign up at neon.com (GitHub login is fine). Create a project: name `k3-dashboard`,
+   Postgres 17, region **AWS US East (N. Virginia)**. Leave the database name as `neondb`.
+   Neon creates a branch called `production` (older projects call it `main`) and an owner
+   role `neondb_owner`.
+2. Branches → Create branch: name `staging`, parent `production`. Each branch is a full copy
+   with its own connection strings.
+3. Create the application role **with SQL, not with the Roles tab.** Roles made in the Neon
+   Console (or CLI or API) are members of `neon_superuser`, which can bypass row-level
+   security; that would silently turn off tenant isolation. Open **SQL Editor**, pick the
+   branch at the top, and run, once per branch:
    ```sql
-   CREATE ROLE k3_app LOGIN PASSWORD '<generate 32+ random chars>';
+   CREATE ROLE k3_app WITH LOGIN PASSWORD '<a different 32+ character password per branch>';
    ```
-   The same `CREATE ROLE` sits in migration `0000_foundation.sql` without a password, so if
-   migrations run first, use `ALTER ROLE k3_app LOGIN PASSWORD '...'` instead.
-4. Note two connection strings per branch: the **owner** one (for migrations, GitHub secret
-   `DATABASE_URL`) and the **k3_app** one (for Hyperdrive). Use the pooled host for Hyperdrive.
+   (Migrations also create `k3_app` without a password if it does not exist; if that ran
+   first, use `ALTER ROLE k3_app WITH LOGIN PASSWORD '...'` instead.) Generate the password
+   with `openssl rand -base64 32` or a password manager and store it there.
+   The deployed app checks this on every `/api/health` call and reports 503 with reason
+   `bypassrls` or `connected_as_<role>` if the connection is not a plain `k3_app`.
+4. Connection strings, from the **Connect** button with the branch selected. You need two
+   per branch:
+   - **Owner** (role `neondb_owner`, "Pooled connection" off): for migrations. This is the
+     GitHub environment secret `DATABASE_URL`.
+   - **k3_app** (role `k3_app`, "Pooled connection" on): for the Worker, via Hyperdrive.
+     The Connect dialog lets you pick the role; the password is the one you set in step 3.
+   Both look like `postgresql://<role>:<password>@<host>/neondb?sslmode=require`. Keep them
+   in your password manager; they are never committed.
+5. Settings → "Restore window" (history retention): set it to the longest the plan allows.
+   This is the backup.
 
 ## 2. Cloudflare (Worker, Hyperdrive, DNS)
 

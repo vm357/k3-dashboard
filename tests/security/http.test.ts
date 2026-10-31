@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { sql } from "drizzle-orm";
 import { apiApp } from "../../server/api/app";
+import { checkIsolation } from "../../server/db/isolation";
 import { createAuth } from "../../server/auth/auth";
 import { securityHeaders, withSecurityHeaders } from "../../server/http/security";
 import { createRouteHarness, type RouteHarness } from "../helpers/server";
@@ -51,6 +53,23 @@ describe("http edge", () => {
 		expect(bad.status).toBe(503);
 		expect(await bad.text()).not.toContain("secret");
 	}, 20_000);
+
+	it("health fails when the connection could bypass row-level security", async () => {
+		// The test database's k3_app is a plain role, so the real check passes...
+		expect(await checkIsolation(h.db)).toEqual({ ok: true });
+		// ...and a role with BYPASSRLS (what Neon's Console creates) is reported, not ignored.
+		await h.db.execute(sql`reset role`);
+		await h.db.execute(sql`do $$ begin if not exists (select 1 from pg_roles where rolname = 'k3_console') then create role k3_console bypassrls; end if; end $$`);
+		await h.db.execute(sql`grant k3_app to k3_console`);
+		await h.db.execute(sql`set role k3_console`);
+		try {
+			const r = await checkIsolation(h.db);
+			expect(r).toEqual({ ok: false, reason: "connected_as_k3_console" });
+		} finally {
+			await h.db.execute(sql`reset role`);
+			await h.db.execute(sql`set role k3_app`);
+		}
+	});
 
 	it("sign-in is rate limited per client IP with counters in the database", async () => {
 		const auth = createAuth(h.db, { ...h.env, APP_ENV: "staging" });

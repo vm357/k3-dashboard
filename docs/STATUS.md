@@ -118,7 +118,11 @@ Not done: spending from recorded payments (phase 5), marketing consent export, C
   The earlier `disableSignUp: production` was removed: invitations create accounts through
   `auth.api.signUpEmail` server-side and would have failed in production. Caught by reading,
   not by tests, which run in the test environment; now tested directly.
-- `/api/health` does a database round-trip and returns 503 without detail when it fails.
+- `/api/health` does a database round-trip and proves the connection is a plain `k3_app`
+  (not superuser, not BYPASSRLS, sees no customers without tenant context); 503 with a reason
+  code otherwise. Neon Console-created roles carry BYPASSRLS, so this matters.
+- The route-test harness and the local PGlite database now run as `k3_app`; before this
+  both were the superuser, so row-level security was not in force in local dev or route tests.
 - `scripts/smoke.ts` (`npm run smoke -- <url>`): nine outside-in checks for a deployed site.
 - `scripts/bootstrap-admin.ts`: the first platform admin on an empty production database.
 - `.github/workflows/deploy.yml`: staging on push to main (once enabled), production by hand.
