@@ -6,11 +6,11 @@ name: Deploy
 # as the database owner first, then uploads the Worker, then smoke-tests the live URL.
 #
 # Per-environment secrets (GitHub → Settings → Environments → staging | production):
-#   DATABASE_URL             owner-role Neon connection string, for migrations only
+#   DATABASE_URL             owner-role Neon connection string (direct, not pooled), migrations only
 #   CLOUDFLARE_API_TOKEN     "Edit Cloudflare Workers" template token
 #   CLOUDFLARE_ACCOUNT_ID
-# Worker secrets (AUTH_SECRET, later RESEND_API_KEY, STRIPE_*) are set once with
-# `wrangler secret put` and are not touched here.
+#   AUTH_SECRET              32+ random characters; pushed into the Worker on every deploy
+# Later phases add RESEND_API_KEY and STRIPE_* the same way (see the secrets step).
 
 on:
   push:
@@ -57,6 +57,14 @@ jobs:
       - name: Deploy Worker
         run: npm run build && npx wrangler deploy --env ${{ env.TARGET }}
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Push Worker secrets
+        # Values travel from GitHub's secret store straight to Cloudflare's; nothing is printed.
+        run: |
+          printf '%s' "$AUTH_SECRET" | npx wrangler secret put AUTH_SECRET --env ${{ env.TARGET }}
+        env:
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Smoke test the live site

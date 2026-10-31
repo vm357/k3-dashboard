@@ -30,49 +30,59 @@ admin sends by hand until phase 6), Stripe (phase 5 and 8).
    `bypassrls` or `connected_as_<role>` if the connection is not a plain `k3_app`.
 4. Connection strings, from the **Connect** button with the branch selected. You need two
    per branch:
-   - **Owner** (role `neondb_owner`, "Pooled connection" off): for migrations. This is the
-     GitHub environment secret `DATABASE_URL`.
-   - **k3_app** (role `k3_app`, "Pooled connection" on): for the Worker, via Hyperdrive.
-     The Connect dialog lets you pick the role; the password is the one you set in step 3.
+   - **Owner** (role `neondb_owner`, connection pooling **off**): for migrations. This is
+     the GitHub environment secret `DATABASE_URL`.
+   - **k3_app** (role `k3_app`, connection pooling **off** as well; Hyperdrive pools): for
+     the Worker. The Connect dialog lets you pick the role; the password is the one you set
+     in step 3.
    Both look like `postgresql://<role>:<password>@<host>/neondb?sslmode=require`. Keep them
    in your password manager; they are never committed.
 5. Settings → "Restore window" (history retention): set it to the longest the plan allows.
    This is the backup.
 
-## 2. Cloudflare (Worker, Hyperdrive, DNS)
+## 2. Cloudflare (Hyperdrive, API token, domain)
 
-1. `kermitwebcraft.com` must be on Cloudflare DNS (it is the zone the Worker routes attach to).
-2. Hyperdrive, once per environment, from a machine with `wrangler login` done:
-   ```sh
-   npx wrangler hyperdrive create k3-staging    --connection-string "<k3_app staging URL>"
-   npx wrangler hyperdrive create k3-production --connection-string "<k3_app production URL>"
-   ```
-   Paste the two ids into the commented `hyperdrive` blocks in `wrangler.jsonc` and commit.
-3. Worker secrets, once per environment (the value is read from the prompt, never a file):
-   ```sh
-   openssl rand -base64 32          # generate; paste when prompted
-   npx wrangler secret put AUTH_SECRET --env staging
-   npx wrangler secret put AUTH_SECRET --env production
-   ```
-   Keep the production value somewhere safe: `scripts/bootstrap-admin.ts` needs it once.
-4. Custom domains: after the first deploy, Workers → the Worker → Settings → Domains & Routes
-   → add `staging-app.kermitwebcraft.com` (staging) and `app.kermitwebcraft.com` (production).
-   Cloudflare creates the DNS records and certificates.
-5. WAF rate limiting rule (free plan allows one): path starts with `/api/`, 100 requests per
-   10 seconds per IP, block for 10 seconds. The application also limits sign-in attempts to
-   10 a minute per IP with database-backed counters, so this is the outer layer only.
+Everything here is in the dashboard at dash.cloudflare.com; no terminal needed.
+
+1. **Domain.** `kermitwebcraft.com` must be a zone in this Cloudflare account (its DNS served
+   by Cloudflare). If it is registered elsewhere, add the site in Cloudflare and change the
+   nameservers at the registrar; Cloudflare walks through it. This is what the Worker's
+   custom domains attach to.
+2. **Hyperdrive**, one per environment. Sidebar → **Storage & Databases → Hyperdrive →
+   Create configuration**. Name `k3-staging`; paste the staging **k3_app, direct (pooling
+   off)** connection string from Neon; Create. Repeat as `k3-production` with the production
+   k3_app string. Hyperdrive does its own pooling, so Cloudflare asks for the unpooled Neon
+   string. Each configuration shows an **ID**; the ids are not secret. They go into the two
+   commented `hyperdrive` blocks in `wrangler.jsonc` and get committed (ask Claude or the
+   developer to do that).
+3. **API token** for deploys: top right → My Profile → **API Tokens → Create Token → "Edit
+   Cloudflare Workers"** template → Continue → Create. Copy it once; it is shown once.
+4. **Account ID**: sidebar → Workers & Pages; the account id is in the right column.
+5. **Custom domains**, after the first deploy of each environment: Workers & Pages → the
+   Worker (`k3-dashboard-staging` / `k3-dashboard-production`) → Settings → **Domains &
+   Routes → Add → Custom domain**: `staging-app.kermitwebcraft.com`, then
+   `app.kermitwebcraft.com` on the production Worker. DNS and certificates are automatic.
+6. **WAF rate limit** (optional on the free plan, one rule): Security → WAF → Rate limiting
+   rules: path starts with `/api/`, 100 requests per 10 seconds per IP, block for 10
+   seconds. The app limits sign-in attempts itself; this is the outer layer.
 
 ## 3. GitHub (deploys)
 
-1. Settings → Environments: create `staging` and `production`. On `production`, add yourself
-   as a required reviewer so a production deploy waits for a click.
-2. In each environment, secrets:
-   - `DATABASE_URL`: the **owner** connection string for that branch (migrations only).
-   - `CLOUDFLARE_API_TOKEN`: My Profile → API Tokens → "Edit Cloudflare Workers" template.
-   - `CLOUDFLARE_ACCOUNT_ID`: from the Workers overview page.
-3. Settings → Secrets and variables → Actions → Variables: `DEPLOY_STAGING` = `true`. From
-   then on every push to `main` migrates and deploys staging and smoke-tests it.
-4. Production: Actions → Deploy → Run workflow → `production`. Only from `main`.
+1. Repository → Settings → **Environments** → New environment: `staging`, then
+   `production`. On `production`, turn on **Required reviewers** and add yourself, so a
+   production deploy waits for a click.
+2. In each environment, **Environment secrets** (four):
+   - `DATABASE_URL`: that branch's **neondb_owner, direct** connection string (migrations).
+   - `CLOUDFLARE_API_TOKEN`: from 2.3.
+   - `CLOUDFLARE_ACCOUNT_ID`: from 2.4.
+   - `AUTH_SECRET`: 32+ random characters, different per environment (a password manager
+     can generate it). The deploy pushes it into the Worker.
+3. Settings → Secrets and variables → Actions → **Variables** tab → New repository variable:
+   `DEPLOY_STAGING` = `true`. From then on every push to `main` migrates and deploys
+   staging and smoke-tests it. The first staging deploy's smoke test fails on the custom
+   domain until step 2.5 is done; that is expected once.
+4. Production: Actions tab → **Deploy** → Run workflow → environment `production`. Only
+   from `main`; the required reviewer approves it.
 
 ## 4. First sign-in
 
