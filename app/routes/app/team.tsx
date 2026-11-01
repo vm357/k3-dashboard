@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Form, useRouteLoaderData } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/team";
@@ -8,7 +9,12 @@ import { Link } from "react-router";
 import { envContext } from "../../../server/context";
 import { hasPermission, PERMISSION_KEYS, type PermissionKey } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
-import { createInvitation, listPendingInvitations, revokeInvitation } from "../../../server/domain/invitations/service";
+import { createInvitation, invitationEmailContext, listPendingInvitations, resendInvitation, revokeInvitation } from "../../../server/domain/invitations/service";
+import { sendEmail } from "../../../server/email/send";
+import type { AppEnv } from "../../../server/env";
+import type { Db } from "../../../server/db/client";
+import type { TenantCtx } from "../../../server/auth/ctx";
+import { invitationEmail } from "../../../server/email/templates";
 import { listMembers, removeMember, setMemberPermissions } from "../../../server/domain/members/service";
 import { listEmployees } from "../../../server/domain/staff/service";
 
@@ -41,47 +47,93 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const { ctx } = await requireTenant(db, auth, request, params.business!);
 	if (!hasPermission(ctx.role, [...ctx.permissions], "team.view")) throw new Response("Forbidden", { status: 403 });
 	const [members, pending, employees] = await Promise.all([listMembers(db, ctx), listPendingInvitations(db, ctx), listEmployees(db, ctx, { includeInactive: true })]);
-	return { members, pending, employees, origin: context.get(envContext).APP_ORIGIN };
+	return { members, pending, employees, now: Date.now() };
 }
 
 const inviteForm = z.object({ email: z.email("Enter a valid email"), role: z.enum(["owner", "employee"]) });
 
-export async function action({ request, params, context }: Route.ActionArgs) {
+type ActionData = { error?: string; inviteLink?: string; sentTo?: string; emailFailed?: boolean; resentTo?: string };
+
+/** Email the invitation; on failure the caller still has the link to copy. */
+async function deliver(env: AppEnv, db: Db, ctx: TenantCtx, inviterName: string, inv: { email: string; role: "owner" | "employee"; expiresAt: Date }, link: string) {
+	try {
+		const biz = await invitationEmailContext(db, ctx);
+		await sendEmail(env, invitationEmail({ to: inv.email, inviterName, businessName: biz.name, timeZone: biz.timeZone, role: inv.role, link, expiresAt: inv.expiresAt }));
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+export async function action({ request, params, context }: Route.ActionArgs): Promise<ActionData> {
 	const { db, auth } = services(context);
-	const { ctx } = await requireTenant(db, auth, request, params.business!);
+	const { user, ctx } = await requireTenant(db, auth, request, params.business!);
+	const env = context.get(envContext);
 	const form = await request.formData();
 	const intent = form.get("intent");
 	try {
 		if (intent === "invite") {
 			const parsed = inviteForm.safeParse({ email: form.get("email"), role: form.get("role") ?? "employee" });
-			if (!parsed.success) return { error: z.flattenError(parsed.error).fieldErrors.email?.[0] ?? "Check the form", inviteLink: undefined };
-			const { token } = await createInvitation(db, ctx, parsed.data);
-			const origin = context.get(envContext).APP_ORIGIN;
-			return { error: undefined, inviteLink: `${origin}/invite/${token}` };
+			if (!parsed.success) return { error: z.flattenError(parsed.error).fieldErrors.email?.[0] ?? "Check the form" };
+			const { invitation, token } = await createInvitation(db, ctx, parsed.data);
+			const link = `${env.APP_ORIGIN}/invite/${token}`;
+			const ok = await deliver(env, db, ctx, user.name, invitation, link);
+			return { inviteLink: link, sentTo: invitation.email, emailFailed: !ok };
+		}
+		if (intent === "resend") {
+			const { invitation, token } = await resendInvitation(db, ctx, String(form.get("invitationId")));
+			const link = `${env.APP_ORIGIN}/invite/${token}`;
+			const ok = await deliver(env, db, ctx, user.name, invitation, link);
+			return ok ? { resentTo: invitation.email } : { inviteLink: link, sentTo: invitation.email, emailFailed: true };
 		}
 		if (intent === "revoke") {
 			await revokeInvitation(db, ctx, String(form.get("invitationId")));
-			return { error: undefined, inviteLink: undefined };
+			return {};
 		}
 		if (intent === "remove") {
 			await removeMember(db, ctx, String(form.get("memberId")));
-			return { error: undefined, inviteLink: undefined };
+			return {};
 		}
 		if (intent === "permissions") {
 			const keys = form.getAll("permission").map(String);
 			await setMemberPermissions(db, ctx, String(form.get("memberId")), keys);
-			return { error: undefined, inviteLink: undefined };
+			return {};
 		}
 	} catch (err) {
 		const e = err as { status?: number; code?: string; message?: string };
 		if (e.status === 403) throw new Response("Forbidden", { status: 403 });
-		if (e.code === "last_owner") return { error: "A business must keep at least one owner.", inviteLink: undefined };
-		return { error: "That did not work. Try again.", inviteLink: undefined };
+		if (e.code === "last_owner") return { error: "A business must keep at least one owner." };
+		return { error: "That did not work. Try again." };
 	}
-	return { error: "Unknown action", inviteLink: undefined };
+	return { error: "Unknown action" };
+}
+
+function sentAgo(sentAt: Date | string, now: number): string {
+	const min = Math.round((now - new Date(sentAt).getTime()) / 60000);
+	if (min < 1) return "just now";
+	if (min < 60) return `${min} min ago`;
+	const h = Math.round(min / 60);
+	if (h < 24) return `${h} h ago`;
+	const d = Math.round(h / 24);
+	return d === 1 ? "yesterday" : `${d} days ago`;
+}
+
+function CopyLink({ link }: { link: string }) {
+	const [copied, setCopied] = useState(false);
+	return (
+		<Button
+			type="button"
+			variant="outlined"
+			size="sm"
+			onClick={() => navigator.clipboard?.writeText(link).then(() => setCopied(true))}
+		>
+			{copied ? "Link copied" : "Copy link to text it"}
+		</Button>
+	);
 }
 
 export default function Team({ loaderData, actionData }: Route.ComponentProps) {
+	const now = loaderData.now;
 	const data = useRouteLoaderData<typeof layoutLoader>("routes/app/business-layout")!;
 	const canManage = hasPermission(data.ctx.role, data.ctx.permissions, "team.manage");
 	const isOwner = data.ctx.role === "owner";
@@ -93,36 +145,47 @@ export default function Team({ loaderData, actionData }: Route.ComponentProps) {
 			{canManage ? (
 				<Card className="flex flex-col gap-4">
 					<h2 className="text-base font-bold">Invite someone</h2>
-					<Form method="post" className="flex flex-col gap-4" noValidate>
-						<input type="hidden" name="intent" value="invite" />
-						<Field label="Email" name="email" type="email" inputMode="email" autoComplete="off" required />
-						{isOwner ? (
-							<fieldset className="flex gap-2">
-								<legend className="mb-1.5 text-sm font-semibold">Role</legend>
-								<label className="flex items-center gap-2 rounded-pill border border-input-border bg-card px-4 py-2 text-sm font-semibold has-checked:border-cta has-checked:bg-mint has-checked:text-heading">
-									<input type="radio" name="role" value="employee" defaultChecked className="sr-only" />
-									Employee
-								</label>
-								<label className="flex items-center gap-2 rounded-pill border border-input-border bg-card px-4 py-2 text-sm font-semibold has-checked:border-cta has-checked:bg-mint has-checked:text-heading">
-									<input type="radio" name="role" value="owner" className="sr-only" />
-									Owner
-								</label>
-							</fieldset>
-						) : (
-							<input type="hidden" name="role" value="employee" />
-						)}
-						{actionData?.error ? <p role="alert" className="text-sm text-danger">{actionData.error}</p> : null}
-						<Button type="submit" className="self-start">
-							Create invitation
-						</Button>
-					</Form>
-					{actionData?.inviteLink ? (
-						<div className="flex flex-col gap-2 rounded-card bg-mint p-3.5">
-							<span className="text-sm font-semibold text-heading">Send this link. It works once and expires in 7 days.</span>
-							<code className="break-all rounded-input bg-card px-3 py-2 text-xs">{actionData.inviteLink}</code>
-							<span className="text-xs text-ink-soft">Email delivery is added in a later build; for now copy and text it.</span>
+					{actionData?.sentTo ? (
+						<div role="status" className="flex flex-col gap-2.5 rounded-card bg-mint p-3.5">
+							{actionData.emailFailed ? (
+								<>
+									<span className="text-[15px] font-bold text-heading">Invitation ready for {actionData.sentTo}</span>
+									<span className="text-sm">The email didn't go out. Copy the link and text it; it works once and expires in 7 days.</span>
+									<code className="break-all rounded-input bg-card px-3 py-2 text-xs">{actionData.inviteLink}</code>
+								</>
+							) : (
+								<>
+									<span className="text-[15px] font-bold text-heading">Invitation sent to {actionData.sentTo}</span>
+									<span className="text-sm">It works once and expires in 7 days. They'll show under Waiting to join until they accept.</span>
+								</>
+							)}
+							<div className="flex flex-wrap gap-2">
+								{actionData.inviteLink ? <CopyLink link={actionData.inviteLink} /> : null}
+								<ButtonLink to="." variant="quiet" size="sm" replace>Invite another</ButtonLink>
+							</div>
 						</div>
-					) : null}
+					) : (
+						<Form method="post" className="flex flex-col gap-4" noValidate>
+							<input type="hidden" name="intent" value="invite" />
+							<Field label="Email" name="email" type="email" inputMode="email" autoComplete="off" required error={actionData?.error} />
+							{isOwner ? (
+								<fieldset className="flex gap-2">
+									<legend className="mb-1.5 text-sm font-semibold">Role</legend>
+									<label className="flex min-h-10 items-center gap-2 rounded-pill border border-input-border bg-card px-4 text-sm font-semibold has-checked:border-cta has-checked:bg-mint has-checked:text-heading">
+										<input type="radio" name="role" value="employee" defaultChecked className="sr-only" />
+										Employee
+									</label>
+									<label className="flex min-h-10 items-center gap-2 rounded-pill border border-input-border bg-card px-4 text-sm font-semibold has-checked:border-cta has-checked:bg-mint has-checked:text-heading">
+										<input type="radio" name="role" value="owner" className="sr-only" />
+										Owner
+									</label>
+								</fieldset>
+							) : (
+								<input type="hidden" name="role" value="employee" />
+							)}
+							<Button type="submit" className="self-start">Send invitation</Button>
+						</Form>
+					)}
 				</Card>
 			) : null}
 
@@ -154,18 +217,21 @@ export default function Team({ loaderData, actionData }: Route.ComponentProps) {
 			{loaderData.pending.length > 0 ? (
 				<section className="flex flex-col gap-2">
 					<h2 className="px-0.5 text-base font-bold">Waiting to join</h2>
+					{actionData?.resentTo ? <p role="status" className="px-0.5 text-sm text-heading">Sent a fresh link to {actionData.resentTo}. The old one no longer works.</p> : null}
 					<ul className="flex flex-col overflow-hidden rounded-card bg-card shadow-card">
 						{loaderData.pending.map((p) => (
 							<li key={p.id} className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3 last:border-b-0">
 								<div className="flex min-w-0 flex-col">
 									<span className="truncate text-sm font-semibold">{p.email}</span>
-									<span className="text-xs text-ink-soft">{p.role === "owner" ? "Owner" : "Employee"} · invited</span>
+									<span className="text-xs text-ink-soft">{p.role === "owner" ? "Owner" : "Employee"} · emailed {sentAgo(p.sentAt, now)}</span>
 								</div>
 								{canManage ? (
-									<Form method="post">
-										<input type="hidden" name="intent" value="revoke" />
+									<Form method="post" className="flex shrink-0">
 										<input type="hidden" name="invitationId" value={p.id} />
-										<Button type="submit" variant="quiet" size="sm">Revoke</Button>
+										{now - new Date(p.sentAt).getTime() > 24 * 60 * 60 * 1000 ? (
+											<Button type="submit" variant="quiet" size="sm" name="intent" value="resend" className="text-cta">Resend</Button>
+										) : null}
+										<Button type="submit" variant="quiet" size="sm" name="intent" value="revoke">Revoke</Button>
 									</Form>
 								) : null}
 							</li>

@@ -1,5 +1,8 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { emailOTP } from "better-auth/plugins";
+import { sendEmail } from "../email/send";
+import { resetCodeEmail } from "../email/templates";
 import type { Db } from "../db/client";
 import * as schema from "../db/schema";
 import type { AppEnv } from "../env";
@@ -19,6 +22,8 @@ export function createAuth(db: Db, env: AppEnv) {
 		emailAndPassword: {
 			enabled: true,
 			minPasswordLength: 12,
+			// A reset signs the account out everywhere else (shown on the new-password screen).
+			revokeSessionsOnPasswordReset: true,
 			// Self-serve signup is phase 8. Until then accounts come from invitations (which
 			// call signUpEmail server-side) and the seed script. The public HTTP endpoint is
 			// blocked in server/api/app.ts in every environment; `disableSignUp` is not used
@@ -36,6 +41,21 @@ export function createAuth(db: Db, env: AppEnv) {
 				"/request-password-reset": { window: 60, max: 5 },
 			},
 		},
+		// Password reset by six-digit code (Phase 6, option 1b). Only the forget-password type
+		// ever sends: OTP sign-in and email verification are not offered, and their HTTP
+		// endpoints are blocked in server/api/app.ts. The /forgot route calls auth.api directly.
+		plugins: [
+			emailOTP({
+				otpLength: 6,
+				expiresIn: 10 * 60,
+				allowedAttempts: 3,
+				disableSignUp: true,
+				async sendVerificationOTP({ email, otp, type }) {
+					if (type !== "forget-password") return;
+					await sendEmail(env, resetCodeEmail({ to: email, code: otp }));
+				},
+			}),
+		],
 		user: {
 			additionalFields: {
 				isPlatformAdmin: { type: "boolean", defaultValue: false, input: false },

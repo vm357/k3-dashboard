@@ -42,6 +42,13 @@ apiApp.get("/api/health", async (c) => {
 // endpoint does not exist from the outside, in any environment.
 apiApp.all("/api/auth/sign-up/*", (c) => c.json({ error: "not_found" }, 404));
 
+// Password reset runs only through the /forgot page, which throttles by IP and email and
+// calls auth.api server-side. The plugin's public endpoints (including OTP sign-in) and the
+// link-based reset endpoints are not reachable from outside.
+for (const path of ["/api/auth/email-otp/*", "/api/auth/sign-in/email-otp", "/api/auth/forget-password/*", "/api/auth/request-password-reset", "/api/auth/reset-password", "/api/auth/reset-password/*"]) {
+	apiApp.all(path, (c) => c.json({ error: "not_found" }, 404));
+}
+
 apiApp.on(["GET", "POST"], "/api/auth/*", (c) => {
 	const db = createDb(c.env);
 	const auth = createAuth(db, c.env);

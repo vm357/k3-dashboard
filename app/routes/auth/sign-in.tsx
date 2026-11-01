@@ -1,4 +1,4 @@
-import { Form, redirect, useNavigation } from "react-router";
+import { Form, Link, redirect, useNavigation } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/sign-in";
 import { Button, Field } from "../../components/ui";
@@ -84,6 +84,9 @@ export default function SignIn({ actionData }: Route.ComponentProps) {
 						required
 						error={actionData?.errors?.password}
 					/>
+					<Link to="/forgot" className="-mt-1 flex min-h-11 items-center self-end text-sm font-semibold text-cta">
+						Forgot password?
+					</Link>
 					{actionData?.message ? (
 						<p role="alert" className="rounded-card bg-card px-3.5 py-3 text-sm text-danger shadow-card">
 							{actionData.message}

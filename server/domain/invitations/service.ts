@@ -30,7 +30,7 @@ function newToken(): string {
 
 /**
  * Create an invitation. Returns the raw token exactly once; it is never stored.
- * Sending the email is phase 6; until then the owner copies the link from the team page.
+ * The Team page emails the link (server/email) and also offers it to copy.
  */
 export async function createInvitation(db: Db, ctx: TenantCtx, raw: z.input<typeof inviteSchema>) {
 	require(ctx, "team.manage");
@@ -74,10 +74,50 @@ export async function listPendingInvitations(db: Db, ctx: TenantCtx) {
 	require(ctx, "team.view");
 	return withTenant(db, ctx, (tx) =>
 		tx
-			.select({ id: invitations.id, email: invitations.email, role: invitations.role, expiresAt: invitations.expiresAt })
+			.select({ id: invitations.id, email: invitations.email, role: invitations.role, expiresAt: invitations.expiresAt, sentAt: invitations.createdAt })
 			.from(invitations)
 			.where(and(eq(invitations.businessId, ctx.businessId), isNull(invitations.acceptedAt), gt(invitations.expiresAt, new Date()))),
 	);
+}
+
+/**
+ * Issue a fresh token and 7-day expiry for a pending invitation; the old link stops working.
+ * `createdAt` moves to now so the Team page shows when it was last emailed.
+ */
+export async function resendInvitation(db: Db, ctx: TenantCtx, invitationId: string) {
+	require(ctx, "team.manage");
+	const token = newToken();
+	const tokenHash = await sha256Hex(token);
+	const invitation = await withTenant(db, ctx, async (tx) => {
+		const [current] = await tx
+			.select({ role: invitations.role })
+			.from(invitations)
+			.where(and(eq(invitations.id, invitationId), eq(invitations.businessId, ctx.businessId), isNull(invitations.acceptedAt)));
+		if (!current) throw new DomainError("invitation_invalid");
+		if (current.role === "owner") requireOwner(ctx);
+		const [row] = await tx
+			.update(invitations)
+			.set({ tokenHash, expiresAt: new Date(Date.now() + INVITE_TTL_MS), createdAt: new Date() })
+			.where(and(eq(invitations.id, invitationId), eq(invitations.businessId, ctx.businessId)))
+			.returning();
+		await recordAudit(tx, {
+			businessId: ctx.businessId,
+			actorUserId: ctx.userId,
+			action: "invitation.resend",
+			targetTable: "invitations",
+			targetId: row.id,
+		});
+		return row;
+	});
+	return { invitation, token };
+}
+
+/** Business name and time zone for the invitation email, read inside the caller's tenant. */
+export async function invitationEmailContext(db: Db, ctx: TenantCtx) {
+	const [biz] = await withTenant(db, ctx, (tx) =>
+		tx.select({ name: businesses.name, timeZone: businesses.timeZone }).from(businesses).where(eq(businesses.id, ctx.businessId)),
+	);
+	return biz;
 }
 
 export async function revokeInvitation(db: Db, ctx: TenantCtx, invitationId: string) {
