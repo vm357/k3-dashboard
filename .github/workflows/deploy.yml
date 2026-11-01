@@ -78,5 +78,11 @@ jobs:
           AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      - name: Smoke test the live site
+      - name: Smoke test the Worker on workers.dev
+        # The workers.dev address exists from the first deploy, so this is the hard check.
+        run: npx tsx scripts/smoke.ts https://k3-dashboard-${TARGET}.vimerlismendez.workers.dev
+      - name: Smoke test the custom domain
+        # Fails only until the custom domain is attached in the Cloudflare dashboard
+        # (docs/LAUNCH.md, step 2.5); the deploy itself has already succeeded above.
+        continue-on-error: true
         run: npx tsx scripts/smoke.ts ${{ env.TARGET == 'production' && 'https://app.kermitwebcraft.com' || 'https://staging-app.kermitwebcraft.com' }}
