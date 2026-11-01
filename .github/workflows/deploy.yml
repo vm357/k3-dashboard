@@ -54,15 +54,26 @@ jobs:
         run: npm run db:migrate
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Build for ${{ env.TARGET }}
+        # The Cloudflare Vite plugin resolves the wrangler environment at build time and
+        # writes build/server/wrangler.json; wrangler then uses that file and ignores --env.
+        run: npm run build
+        env:
+          CLOUDFLARE_ENV: ${{ env.TARGET }}
+      - name: Check the built config targets ${{ env.TARGET }}
+        run: |
+          name=$(node -e "console.log(require('./build/server/wrangler.json').name)")
+          test "$name" = "k3-dashboard-${TARGET}" || { echo "built config is for '$name', expected k3-dashboard-${TARGET}"; exit 1; }
       - name: Deploy Worker
-        run: npm run build && npx wrangler deploy --env ${{ env.TARGET }}
+        run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Push Worker secrets
         # Values travel from GitHub's secret store straight to Cloudflare's; nothing is printed.
+        # Same redirected config as the deploy, so this lands on the Worker just deployed.
         run: |
-          printf '%s' "$AUTH_SECRET" | npx wrangler secret put AUTH_SECRET --env ${{ env.TARGET }}
+          printf '%s' "$AUTH_SECRET" | npx wrangler secret put AUTH_SECRET
         env:
           AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

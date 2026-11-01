@@ -5,8 +5,12 @@
  * One Worker serves the dashboard (React Router), the public API and webhooks (Hono),
  * queue consumers and cron handlers. Environments differ only in names, bindings and secrets.
  *
- * Secrets (never in this file): see .dev.vars.example. Set per environment with
- *   wrangler secret put <NAME> --env staging|production
+ * The Cloudflare Vite plugin resolves the environment at BUILD time: CLOUDFLARE_ENV=staging
+ * (or production) `npm run build`, then plain `wrangler deploy`; `--env` on deploy is ignored
+ * because wrangler is redirected to build/server/wrangler.json. See deploy.yml.
+ *
+ * Secrets (never in this file): see .dev.vars.example. The deploy workflow pushes them from
+ * GitHub environment secrets; by hand, after such a build: wrangler secret put <NAME>
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
