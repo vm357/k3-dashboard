@@ -87,16 +87,18 @@ Everything here is in the dashboard at dash.cloudflare.com; no terminal needed.
 ## 4. First sign-in
 
 Open sign-up is closed and the seed script refuses to run outside development, so the first
-account is created from a terminal, once, against an empty database:
+account is created from a terminal, once per environment, against an empty database. Any
+machine with Node 22 and the repository works (VS Code's terminal is fine):
 
 ```sh
-DATABASE_URL='<owner connection string>' AUTH_SECRET='<the Worker's AUTH_SECRET>' \
-APP_ORIGIN=https://app.kermitwebcraft.com \
-ADMIN_EMAIL=you@kermitwebcraft.com ADMIN_NAME="Kermit" ADMIN_PASSWORD='<12+ characters>' \
 npx tsx scripts/bootstrap-admin.ts
 ```
 
-It refuses if any user already exists. Then sign in at `/sign-in` and you land on `/admin`.
+It asks for: environment (`staging` or `production`), that branch's **neondb_owner**
+connection string from Neon, that environment's `AUTH_SECRET` (the value in GitHub), and
+the admin's email, name and a 12+ character password. Secrets are not echoed as you type or
+paste. It refuses if any user already exists. Then sign in at `/sign-in`; an admin lands
+on `/admin`.
 
 ## 5. Onboard the pilot salon
 

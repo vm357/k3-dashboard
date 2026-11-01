@@ -16,7 +16,7 @@ import path from "node:path";
  * Serves one connection at a time, which is fine for one developer, not for a team.
  */
 const port = Number(process.env.LOCAL_DB_PORT ?? 5433);
-const dir = path.resolve(process.cwd(), ".local-db");
+const dir = path.resolve(process.cwd(), process.env.LOCAL_DB_DIR ?? ".local-db");
 
 const pglite = new PGlite(dir, { extensions: { btree_gist } });
 const db = drizzle(pglite);
