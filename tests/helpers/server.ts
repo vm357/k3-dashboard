@@ -47,6 +47,7 @@ export async function createRouteHarness(): Promise<RouteHarness> {
 		APP_ORIGIN: "http://localhost",
 		AUTH_SECRET: "test-secret-test-secret-test-secret-123456",
 		DATABASE_URL: `postgres://k3_app:k3_app@127.0.0.1:${port}/postgres`,
+		EMAIL_FROM_ADDRESS: "no-reply@k3.test",
 	};
 	const context = new RouterContextProvider();
 	context.set(envContext, env);

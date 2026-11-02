@@ -3,7 +3,7 @@
 Updated in the same commit as the code it describes. "Done" means implemented and covered by
 tests that ran green; the CI run link goes beside the entry once the repository is on GitHub.
 
-## Phase 1: Foundation — done except cloud setup
+## Phase 1: Foundation — done except the production deploy
 
 Done (tests: `npm test`, 38 passing locally against PGlite on 2026-10-28; CI not yet run):
 
@@ -30,12 +30,16 @@ Done (tests: `npm test`, 38 passing locally against PGlite on 2026-10-28; CI not
 - Security tests: tenant isolation (10), roles and permissions (10), invitations and onboarding (8),
   route level with real Better Auth sessions over PGlite's wire protocol (10)
 
+Cloud setup (confirmed by Kermit, 2026-11-01): Neon project and roles, Hyperdrive bindings and the
+Cloudflare connections, DNS and custom domains are done; the repository is on GitHub with CI green;
+staging is deployed. Production is not deployed yet, on purpose: it goes
+out from the Actions tab when the pilot salon is ready to start.
+
 Not done (still Phase 1):
 
-- Neon project, Hyperdrive bindings, staging and production Workers, DNS (needs the Kermit Webcraft Cloudflare and Neon accounts)
-- Push to GitHub and a first CI run (repository not yet created)
-- Invitation emails (phase 6); until then the owner copies the link from the Team page
-- Password reset (needs email); TOTP for admins (phase 8)
+- Production deploy (manual, behind the `production` environment's reviewer; see `docs/LAUNCH.md`)
+- Invitation emails and password reset: built in phase 6, not yet tested
+- TOTP for admins (phase 8)
 
 ## Phase 2: Dashboard core — done
 
@@ -133,6 +137,27 @@ domains, GitHub environment secrets. Resend and Stripe are not needed for the pi
 
 Known gap that should land before the pilot depends on the app: there is no password reset
 (phase 6, Resend). An owner who forgets her password is locked out and the admin cannot help.
+
+## Phase 6 (part): password reset and invitation emails — done locally, staging pending
+
+Designs: `Phase 6 Account Emails.dc.html` (options), picks 1b, 2b, 3a; `Phase 6 Prototype.dc.html`.
+Tests: `npm test`, 108 passing locally on 2026-11-01 (22 in `tests/security/password-reset.test.ts`); typecheck clean.
+
+- `/forgot`: six-digit code by email (Better Auth `emailOTP` plugin, 10 minutes, 3 attempts),
+  then a new password on the same route; signs in and lands on the user's home. Same answer
+  for unknown emails. Throttled in `server/http/throttle.ts` (10 sends per IP and 3 per email
+  per 10 minutes, 20 checks per IP) because `auth.api` calls skip Better Auth's limiter.
+  `revokeSessionsOnPasswordReset` signs out other devices. "Forgot password?" on Sign in.
+- The plugin's public endpoints, OTP sign-in and the link-based reset endpoints are 404 in Hono.
+- `server/email`: Resend over fetch, plain-letter templates (HTML + text) for the reset code and
+  the invitation. Development prints to the console without a key; test captures in `outbox`;
+  staging/production need `RESEND_API_KEY` and `EMAIL_FROM_ADDRESS` (default no-reply@k3dashboard.app).
+- Team: "Send invitation" emails the link and keeps "Copy link to text it"; if sending fails the
+  link is shown to copy. Pending rows show when they were emailed; Resend after 24 h issues a
+  fresh token (`resendInvitation`, audited `invitation.resend`).
+
+To do before calling it done: `RESEND_API_KEY` as a staging secret, verify the sending domain in Resend,
+and walk the reset and invite flows on staging with a real inbox.
 
 ## Known gaps and decisions deferred
 
