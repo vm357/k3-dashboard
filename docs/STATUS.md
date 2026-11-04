@@ -216,6 +216,28 @@ Design: `K3 Dashboard.dc.html` (Bookings tab). No migration.
 
 Not done: creating blocks from the calendar itself (still under Team → staff member).
 
+## Dashboard update 4: waitlist and reminders — done locally, staging pending
+
+Design: `K3 Dashboard.dc.html` (Today, appointment sidebar, Settings). Migration `0008_waitlist_reminders`.
+
+- Reminder state on appointments (`reminder_status`: not sent, sent, confirmed, declined; sent and
+  replied times), separate from the visit status, so a "no" never cancels anything by itself. A moved
+  booking starts again at "not sent".
+- Appointment panel: Reminder card with status, Send / Resend (hidden once confirmed), Mark confirmed,
+  They said no. Send shows a preview first. Without Twilio the preview offers "Open Messages" (the
+  phone's own app with the text filled in) and "I sent it"; with Twilio it is one "Send text" button.
+- Settings → Reminder text: template with {first_name} {business} {service} {date} {time} {staff} and
+  a live example. The business name comes from Settings.
+- Today: "Not confirmed yet" (today and tomorrow) and a Waitlist card with Add, Book and Remove.
+  Calendar Day view lists waitlist entries that want that day or any day. Booking from the waitlist
+  closes the entry.
+- `server/sms/send.ts`: Twilio over fetch; test mode captures in `smsOutbox`. Env:
+  `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` (all optional until set).
+- Tests: `tests/domain/waitlist-reminders.test.ts`.
+
+Not done (Twilio step): reading Y/N replies from clients (Twilio webhook with signature check) and
+sending reminders automatically the day before (cron). Both need the approved Twilio number.
+
 ## Known gaps and decisions deferred
 
 - Self-serve signup is disabled in production until phase 8; accounts come from invitations or admin onboarding.

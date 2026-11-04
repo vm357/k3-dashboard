@@ -14,6 +14,7 @@ import { addDays, formatLocalDate, localDateOf, parseLocalDate, weekdayOf } from
 import { listServices } from "../../../server/domain/services/service";
 import { getBusiness } from "../../../server/domain/businesses/service";
 import { closedDates } from "../../../server/domain/calendar/service";
+import { markWaitlistBooked } from "../../../server/domain/waitlist/service";
 import { listEmployees } from "../../../server/domain/staff/service";
 
 export function meta(): Route.MetaDescriptors {
@@ -37,6 +38,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const svcIds = url.searchParams.getAll("svc");
 	const dateParam = url.searchParams.get("date");
 	const employeeParam = url.searchParams.get("employee");
+	const waitlist = url.searchParams.get("waitlist");
 
 	const [catalog, staff, business] = await Promise.all([listServices(db, ctx), listEmployees(db, ctx), getBusiness(db, ctx)]);
 	const timeZone = business?.timeZone ?? "America/New_York";
@@ -71,6 +73,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		date: date ? formatLocalDate(date) : null,
 		slots: slots ? { ...slots, starts: slots.starts.map((d) => d.toISOString()) } : null,
 		timeZone,
+		waitlist,
 	};
 }
 
@@ -90,6 +93,8 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 			newCustomer,
 			note: String(form.get("note") ?? ""),
 		});
+		const waitlistId = form.get("waitlist");
+		if (waitlistId) await markWaitlistBooked(db, ctx, String(waitlistId), appt.id).catch(() => false);
 		throw redirect(`/app/${params.business}/appointments/${appt.id}?booked=1`);
 	} catch (err) {
 		if (err instanceof Response) throw err;
@@ -128,6 +133,7 @@ export default function Book({ loaderData, actionData }: Route.ComponentProps) {
 		for (const id of svc) sp.append("svc", id);
 		if (date) sp.set("date", date);
 		if (employee) sp.set("employee", employee);
+		if (d.waitlist) sp.set("waitlist", d.waitlist);
 		return { pathname: `${base}/book`, search: `?${sp.toString()}` };
 	};
 	const hidden = () => (
@@ -137,6 +143,7 @@ export default function Book({ loaderData, actionData }: Route.ComponentProps) {
 			{d.svcIds.map((id) => <input key={id} type="hidden" name="svc" value={id} />)}
 			{d.date ? <input type="hidden" name="date" value={d.date} /> : null}
 			{d.employee ? <input type="hidden" name="employee" value={d.employee.id} /> : null}
+			{d.waitlist ? <input type="hidden" name="waitlist" value={d.waitlist} /> : null}
 		</>
 	);
 
@@ -286,6 +293,7 @@ export default function Book({ loaderData, actionData }: Route.ComponentProps) {
 						<p className="rounded-card bg-card px-3.5 py-3 text-sm text-ink-soft shadow-card">Nothing fits that day. Try another day or fewer services.</p>
 					) : (
 						<Form method="post" className="flex flex-col gap-3">
+							{d.waitlist ? <input type="hidden" name="waitlist" value={d.waitlist} /> : null}
 							<input type="hidden" name="employeeId" value={d.employee?.id ?? ""} />
 							{d.client ? <input type="hidden" name="client" value={d.client.id} /> : null}
 							{d.svcIds.map((id) => <input key={id} type="hidden" name="svc" value={id} />)}

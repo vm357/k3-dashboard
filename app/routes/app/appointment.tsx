@@ -1,7 +1,9 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/appointment";
 import { requireTenant, services } from "../../../server/auth/session";
-import { getAppointment, reschedule, transition, type AppointmentStatus } from "../../../server/domain/appointments/service";
+import { getAppointment, reschedule, transition, updateReminder, type AppointmentStatus } from "../../../server/domain/appointments/service";
+import { sendReminder } from "../../../server/domain/reminders/service";
+import { envContext } from "../../../server/context";
 import { formatLocalDate, localDateOf } from "../../../server/domain/scheduling/time";
 
 /**
@@ -25,7 +27,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 function backTo(raw: string, base: string, patch: Record<string, string | null>) {
 	const ok = raw === base || raw.startsWith(`${base}/`) || raw.startsWith(`${base}?`);
 	const u = new URL(ok ? raw : base, "http://x");
-	for (const k of ["move", "with", "cancel", "err", "booked"]) u.searchParams.delete(k);
+	for (const k of ["move", "with", "cancel", "remind", "err", "booked"]) u.searchParams.delete(k);
 	for (const [k, v] of Object.entries(patch)) (v === null ? u.searchParams.delete(k) : u.searchParams.set(k, v));
 	return u.pathname + u.search;
 }
@@ -43,6 +45,20 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 			const employeeId = form.get("employeeId") ? String(form.get("employeeId")) : undefined;
 			const moved = await reschedule(db, ctx, id, new Date(String(form.get("at"))), employeeId);
 			return redirect(backTo(returnTo, base, { a: moved.id }));
+		}
+		if (intent === "remind-send") {
+			try {
+				await sendReminder(db, ctx, context.get(envContext), id);
+			} catch (err) {
+				const c = (err as { code?: string }).code;
+				if (c === "sms_not_configured" || c === "sms_failed") return redirect(backTo(returnTo, base, { a: id, remind: "1", err: "sms" }));
+				throw err;
+			}
+			return redirect(backTo(returnTo, base, { a: id }));
+		}
+		if (intent === "remind-sent" || intent === "remind-confirmed" || intent === "remind-declined") {
+			await updateReminder(db, ctx, id, intent.slice(7) as "sent" | "confirmed" | "declined");
+			return redirect(backTo(returnTo, base, { a: id }));
 		}
 		await transition(db, ctx, id, intent as AppointmentStatus, String(form.get("reason") ?? ""));
 		// Checking in from the Next up card stays on Today without opening the panel.

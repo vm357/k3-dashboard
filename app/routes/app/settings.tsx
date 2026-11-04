@@ -9,6 +9,7 @@ import { requireTenant, services } from "../../../server/auth/session";
 import { getHours, getPolicy, policySchema, setHours, setPolicy } from "../../../server/domain/businesses/hours";
 import { updateBusinessSettings } from "../../../server/domain/businesses/service";
 import { addClosedDays, listClosedDays, removeClosedDay } from "../../../server/domain/calendar/service";
+import { DEFAULT_REMINDER, REMINDER_PLACEHOLDERS, renderReminder } from "../../../server/domain/reminders/text";
 import { WEEKDAYS } from "../../../server/domain/staff/service";
 
 const fmtDay = (iso: string) => {
@@ -71,6 +72,12 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 			await removeClosedDay(db, ctx, String(form.get("id")));
 			return { saved: "closed" as const, errors: {} };
 		}
+		if (intent === "reminder") {
+			const current = await getPolicy(db, ctx);
+			const raw = String(form.get("reminderTemplate") ?? "").trim();
+			await setPolicy(db, ctx, { ...current, reminderTemplate: raw === DEFAULT_REMINDER ? "" : raw });
+			return { saved: "reminder" as const, errors: {} };
+		}
 		if (intent === "policy") {
 			const parsed = policySchema.safeParse({
 				slotIntervalMinutes: form.get("slotIntervalMinutes"),
@@ -78,6 +85,7 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 				maxAdvanceDays: form.get("maxAdvanceDays"),
 				cancellationWindowHours: form.get("cancellationWindowHours"),
 				cancellationNote: form.get("cancellationNote") ?? "",
+				reminderTemplate: (await getPolicy(db, ctx)).reminderTemplate ?? "",
 			});
 			if (!parsed.success) return { saved: undefined, errors: { policy: "Check the numbers and try again." } };
 			await setPolicy(db, ctx, parsed.data);
@@ -201,6 +209,21 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
 						<Button type="submit" variant="outlined" className="self-start">Add closed day</Button>
 					</Form>
 				) : null}
+			</Card>
+
+			<Card className="flex flex-col gap-3">
+				<h2 className="text-base font-bold">Reminder text</h2>
+				<p className="text-sm text-ink-soft">Sent before each booking. These fill in automatically: {REMINDER_PLACEHOLDERS.map((k) => `{${k}}`).join(" ")}</p>
+				<Form method="post" className="flex flex-col gap-3">
+					<input type="hidden" name="intent" value="reminder" />
+					<textarea name="reminderTemplate" rows={4} maxLength={320} defaultValue={p.reminderTemplate || DEFAULT_REMINDER} disabled={!editable} aria-label="Reminder text" className="rounded-input border border-input-border bg-card px-3.5 py-2.5 text-base" />
+					<div className="flex flex-col gap-1 rounded-card bg-canvas px-3.5 py-3">
+						<span className="text-xs font-bold text-ink-soft">Example</span>
+						<p className="text-sm leading-relaxed">{renderReminder(p.reminderTemplate || DEFAULT_REMINDER, { first_name: "Maya", business: data.business.name, service: "Gel fill", date: "Tue, Nov 10", time: "10:30am", staff: data.user.name.split(" ")[0] })}</p>
+					</div>
+					{actionData?.saved === "reminder" ? <p role="status" className="text-sm font-semibold text-heading">Saved</p> : null}
+					{editable ? <Button type="submit" variant="outlined" className="self-start">Save reminder text</Button> : null}
+				</Form>
 			</Card>
 
 			<Card className="flex flex-col gap-4">

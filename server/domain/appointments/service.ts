@@ -283,6 +283,24 @@ export async function reschedule(db: Db, ctx: TenantCtx, id: string, startAt: Da
 	});
 }
 
+/**
+ * Reminder state. "sent" can repeat (a resend) until the client answers; a "declined" reply
+ * only flags the booking so the owner can call, move or cancel it.
+ */
+export async function updateReminder(db: Db, ctx: TenantCtx, id: string, to: "sent" | "confirmed" | "declined", now = new Date()) {
+	return withTenant(db, ctx, async (tx) => {
+		const [appt] = await tx.select().from(appointments).where(and(eq(appointments.id, id), eq(appointments.businessId, ctx.businessId)));
+		if (!appt) throw new DomainError("appointment_not_found");
+		await assertEmployeeAccess(tx, ctx, appt.employeeId);
+		if (appt.status !== "confirmed" || appt.startAt.getTime() <= now.getTime()) throw new DomainError("not_remindable", "Only upcoming bookings get reminders");
+		if (to === "sent" && appt.reminderStatus === "confirmed") throw new DomainError("already_confirmed", "They already confirmed");
+		const patch = to === "sent" ? { reminderStatus: "sent" as const, reminderSentAt: now } : { reminderStatus: to, reminderRepliedAt: now };
+		const [after] = await tx.update(appointments).set({ ...patch, updatedAt: now }).where(eq(appointments.id, id)).returning();
+		await recordAudit(tx, { businessId: ctx.businessId, actorUserId: ctx.userId, action: `appointment.reminder_${to}`, targetTable: "appointments", targetId: id });
+		return after;
+	});
+}
+
 export interface DayAppointment {
 	id: string;
 	startAt: Date;

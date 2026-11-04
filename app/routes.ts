@@ -15,6 +15,7 @@ export default [
         index("routes/app/today.tsx"),
         route("calendar", "routes/app/calendar.tsx"),
         route("book", "routes/app/book.tsx"),
+        route("waitlist/new", "routes/app/waitlist-new.tsx"),
         route("appointments/:appointmentId", "routes/app/appointment.tsx"),
         route("clients", "routes/app/clients.tsx"),
         route("clients/duplicates", "routes/app/duplicates.tsx"),

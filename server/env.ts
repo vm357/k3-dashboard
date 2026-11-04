@@ -18,6 +18,10 @@ const EnvSchema = z.object({
 	RESEND_API_KEY: z.string().optional(),
 	/** Verified sender address on the Resend domain. The display name is set per email. */
 	EMAIL_FROM_ADDRESS: z.email().default("no-reply@mail.kermitwebcraft.com"),
+	/** Twilio, for reminder texts. Until all three are set, reminders are sent from the owner's phone. */
+	TWILIO_ACCOUNT_SID: z.string().optional(),
+	TWILIO_AUTH_TOKEN: z.string().optional(),
+	TWILIO_FROM_NUMBER: z.string().optional(),
 });
 
 export type AppEnv = z.infer<typeof EnvSchema> & {

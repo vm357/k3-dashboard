@@ -13,6 +13,9 @@ import { requireTenant, services } from "../../../server/auth/session";
 import { listDay } from "../../../server/domain/appointments/service";
 import { getBusiness } from "../../../server/domain/businesses/service";
 import { listRange } from "../../../server/domain/calendar/service";
+import { listWaitlist } from "../../../server/domain/waitlist/service";
+import { envContext } from "../../../server/context";
+import { smsConfigured } from "../../../server/sms/send";
 import { addDays, formatLocalDate, type LocalDate, localDateOf, parseLocalDate, weekdayOf } from "../../../server/domain/scheduling/time";
 
 export function meta(): Route.MetaDescriptors {
@@ -58,10 +61,11 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		prev = date.month === 1 ? { year: date.year - 1, month: 12, day: 1 } : { year: date.year, month: date.month - 1, day: 1 };
 		next = date.month === 12 ? { year: date.year + 1, month: 1, day: 1 } : { year: date.year, month: date.month + 1, day: 1 };
 	}
-	const [day, range, panel] = await Promise.all([
+	const [day, range, panel, waitlist] = await Promise.all([
 		view === "day" ? listDay(db, ctx, iso) : null,
 		listRange(db, ctx, formatLocalDate(rangeStart), length),
-		loadAppointmentPanel(db, ctx, url),
+		loadAppointmentPanel(db, ctx, url, { smsReady: smsConfigured(context.get(envContext)) }),
+		view === "day" ? listWaitlist(db, ctx, { date: iso }) : [],
 	]);
 	return {
 		view,
@@ -79,6 +83,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 			blocks: d.blocks.map((b) => ({ ...b, startAt: b.startAt.toISOString(), endAt: b.endAt.toISOString() })),
 		})),
 		multi: range.employees.length > 1,
+		waitlist: waitlist.map((w) => ({ id: w.id, customerId: w.customerId, customerName: w.customerName, preferredDate: w.preferredDate, note: w.note })),
 		panel,
 	};
 }
@@ -128,6 +133,19 @@ export default function Calendar({ loaderData: d }: Route.ComponentProps) {
 
 			{d.view === "day" ? (
 				<>
+					{d.waitlist.length > 0 && !today?.closed ? (
+						<section aria-label="Waitlist" className="flex flex-col gap-1.5 rounded-card border border-dashed border-cta bg-card px-4 py-3">
+							<span className="text-sm font-bold text-heading">Waitlist · {d.waitlist.length} could take a spot</span>
+							<ul className="flex flex-col">
+								{d.waitlist.map((w) => (
+									<li key={w.id} className="flex items-center justify-between gap-3 py-1">
+										<span className="min-w-0 truncate text-sm"><span className="font-semibold">{w.customerName}</span><span className="text-ink-soft"> · {w.preferredDate ? "this day" : "any day"}{w.note ? ` · ${w.note}` : ""}</span></span>
+										<Link to={`${base}/book?client=${w.customerId}&waitlist=${w.id}&date=${d.iso}`} className="press shrink-0 rounded-pill border border-input-border px-3 py-1 text-xs font-semibold text-heading">Book</Link>
+									</li>
+								))}
+							</ul>
+						</section>
+					) : null}
 					{today?.closed ? <p className="rounded-card bg-canvas-alt px-4 py-3 text-sm font-semibold">{today.closed.holiday ? `Closed · ${today.closed.label}` : "Closed"}</p> : null}
 					{d.items.length === 0 && (today?.blocks.length ?? 0) === 0 ? (
 						<EmptyState title="Nothing booked" body={today?.closed ? "The salon is closed this day." : isToday ? "A clear day. Add a walk-in or book ahead." : "Nothing on this day yet."} action={today?.closed ? undefined : <ButtonLink to={`${base}/book`} size="sm">Book</ButtonLink>} />

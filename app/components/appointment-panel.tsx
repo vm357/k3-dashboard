@@ -5,7 +5,7 @@ import { Avatar, Badge, Field } from "./ui";
 import { AllergyNotice, ClientTag } from "./client-tags";
 import { STATUS_LABEL, formatCents, formatDate, formatMinutes, formatPhone, formatTime, formatTimeRange } from "../lib/format";
 
-const PANEL_KEYS = ["a", "move", "with", "cancel", "err", "booked"];
+const PANEL_KEYS = ["a", "move", "with", "cancel", "remind", "err", "booked"];
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /**
@@ -68,7 +68,7 @@ export function AppointmentPanel({ panel, base }: { panel: AppointmentPanelData;
 				<div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 pb-6">
 					<AllergyNotice allergy={a.allergy} />
 					{panel.booked ? <p role="status" className="rounded-card bg-mint px-4 py-3 text-sm font-semibold text-heading">Booked.</p> : null}
-					{panel.err ? <p role="alert" className="rounded-card bg-card px-4 py-3 text-sm text-danger shadow-card">{panel.err === "taken" ? "That time is not available any more. Pick another." : "That did not work. Try again."}</p> : null}
+					{panel.err ? <p role="alert" className="rounded-card bg-card px-4 py-3 text-sm text-danger shadow-card">{panel.err === "taken" ? "That time is not available any more. Pick another." : panel.err === "sms" ? "The text did not go out. Try again, or send it from your phone." : "That did not work. Try again."}</p> : null}
 
 					{primary || canNoShow || canMove || canCancel ? (
 						<div className="flex flex-col gap-2 rounded-card bg-card p-3 shadow-card">
@@ -146,6 +146,57 @@ export function AppointmentPanel({ panel, base }: { panel: AppointmentPanelData;
 									))}
 								</Form>
 							)}
+						</section>
+					) : null}
+
+					{panel.reminder ? (
+						<section aria-label="Reminder" className="flex flex-col gap-2.5 rounded-card bg-card p-4 shadow-card">
+							<div className="flex items-center justify-between gap-2">
+								<h3 className="text-base font-bold">Reminder</h3>
+								<span className={`rounded-pill px-2.5 py-0.5 text-xs font-bold ${panel.reminder.status === "confirmed" ? "bg-mint text-heading" : panel.reminder.status === "declined" ? "bg-danger text-on-dark" : "bg-canvas-alt text-ink-soft"}`}>
+									{panel.reminder.status === "confirmed" ? "Confirmed" : panel.reminder.status === "declined" ? "Said no" : panel.reminder.status === "sent" ? "No reply yet" : "Not sent"}
+								</span>
+							</div>
+							{panel.reminder.sentAt ? <p className="text-xs text-ink-soft">Sent {formatDate(panel.reminder.sentAt, tz)}, {formatTime(panel.reminder.sentAt, tz)}{panel.reminder.repliedAt ? ` · answered ${formatDate(panel.reminder.repliedAt, tz)}, ${formatTime(panel.reminder.repliedAt, tz)}` : ""}</p> : null}
+							{panel.reminder.status === "declined" ? <p className="text-sm">They can't make it. Move or cancel the booking.</p> : null}
+							{panel.reminder.preview ? (
+								<div className="flex flex-col gap-2.5">
+									<p className="rounded-card bg-canvas px-3.5 py-3 text-sm leading-relaxed whitespace-pre-line">{panel.reminder.preview.body}</p>
+									{!panel.reminder.preview.to ? <p className="text-sm text-danger">No phone number on file for this client.</p> : null}
+									<div className="flex flex-wrap justify-end gap-2">
+										<Link to={to({ remind: null })} className="press inline-flex min-h-10 items-center rounded-pill border border-heading px-4 text-sm font-semibold text-heading">Not now</Link>
+										{panel.reminder.preview.to && panel.reminder.smsReady ? (
+											<Form method="post" action={actionUrl}>
+												<input type="hidden" name="returnTo" value={here} />
+												<button type="submit" name="intent" value="remind-send" disabled={busy} className="press inline-flex min-h-10 items-center rounded-pill bg-cta px-4 text-sm font-semibold text-on-dark disabled:opacity-50">Send text</button>
+											</Form>
+										) : panel.reminder.preview.to ? (
+											<>
+												<a href={`sms:${panel.reminder.preview.to}?&body=${encodeURIComponent(panel.reminder.preview.body)}`} className="press inline-flex min-h-10 items-center rounded-pill border border-cta px-4 text-sm font-semibold text-cta">Open Messages</a>
+												<Form method="post" action={actionUrl}>
+													<input type="hidden" name="returnTo" value={here} />
+													<button type="submit" name="intent" value="remind-sent" disabled={busy} className="press inline-flex min-h-10 items-center rounded-pill bg-cta px-4 text-sm font-semibold text-on-dark disabled:opacity-50">I sent it</button>
+												</Form>
+											</>
+										) : null}
+									</div>
+									{!panel.reminder.smsReady && panel.reminder.preview.to ? <p className="text-xs text-ink-soft">Texts go out from your phone until automatic texting is set up.</p> : null}
+								</div>
+							) : panel.reminder.status !== "confirmed" ? (
+								<div className="flex flex-wrap gap-2">
+									<Link to={to({ remind: "1", move: null, cancel: null })} className="press inline-flex min-h-10 items-center rounded-pill border border-heading px-4 text-sm font-semibold text-heading">{panel.reminder.status === "not_sent" ? "Send reminder" : "Resend reminder"}</Link>
+									<Form method="post" action={actionUrl}>
+										<input type="hidden" name="returnTo" value={here} />
+										<button type="submit" name="intent" value="remind-confirmed" disabled={busy} className="press inline-flex min-h-10 items-center rounded-pill border border-input-border px-4 text-sm font-semibold text-ink disabled:opacity-50">Mark confirmed</button>
+									</Form>
+									{panel.reminder.status !== "declined" ? (
+										<Form method="post" action={actionUrl}>
+											<input type="hidden" name="returnTo" value={here} />
+											<button type="submit" name="intent" value="remind-declined" disabled={busy} className="press inline-flex min-h-10 items-center rounded-pill px-3 text-sm font-semibold text-danger disabled:opacity-50">They said no</button>
+										</Form>
+									) : null}
+								</div>
+							) : null}
 						</section>
 					) : null}
 

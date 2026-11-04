@@ -57,6 +57,13 @@
       "when": 1793760000000,
       "tag": "0007_client_info",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793846400000,
+      "tag": "0008_waitlist_reminders",
+      "breakpoints": true
     }
   ]
 }

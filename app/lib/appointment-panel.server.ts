@@ -4,6 +4,7 @@ import type { Db } from "../../server/db/client";
 import { getAppointment, listMoveSlots } from "../../server/domain/appointments/service";
 import { listEmployees } from "../../server/domain/staff/service";
 import { closedDates } from "../../server/domain/calendar/service";
+import { reminderPreview } from "../../server/domain/reminders/service";
 import { addDays, formatLocalDate, localDateOf, weekdayOf } from "../../server/domain/scheduling/time";
 
 /**
@@ -13,11 +14,12 @@ import { addDays, formatLocalDate, localDateOf, weekdayOf } from "../../server/d
  *   &move=YYYY-MM-DD   show the move picker for that day (empty = the booked day)
  *   &with=<employeeId> move to someone else
  *   &cancel=1          show the cancel confirmation
- *   &err=taken|failed  last action's error;  &booked=1  just booked
+ *   &remind=1          show the reminder preview
+ *   &err=taken|failed|sms  last action's error;  &booked=1  just booked
  */
-export const PANEL_PARAMS = ["a", "move", "with", "cancel", "err", "booked"] as const;
+export const PANEL_PARAMS = ["a", "move", "with", "cancel", "remind", "err", "booked"] as const;
 
-export async function loadAppointmentPanel(db: Db, ctx: TenantCtx, url: URL) {
+export async function loadAppointmentPanel(db: Db, ctx: TenantCtx, url: URL, opts: { smsReady?: boolean } = {}) {
 	const id = url.searchParams.get("a");
 	if (!id) return null;
 	const appt = await getAppointment(db, ctx, id);
@@ -49,8 +51,12 @@ export async function loadAppointmentPanel(db: Db, ctx: TenantCtx, url: URL) {
 		move = { date, employeeId, starts, days };
 	}
 
+	const remindable = appt.status === "confirmed" && new Date(appt.startAt).getTime() > now.getTime();
+	const preview = remindable && url.searchParams.get("remind") === "1" ? await reminderPreview(db, ctx, appt.id) : null;
+
 	return {
 		appt,
+		reminder: remindable ? { status: appt.reminderStatus, sentAt: appt.reminderSentAt, repliedAt: appt.reminderRepliedAt, preview: preview ? { body: preview.body, to: preview.to } : null, smsReady: !!opts.smsReady } : null,
 		isToday: apptDay === formatLocalDate(today),
 		staff,
 		move,

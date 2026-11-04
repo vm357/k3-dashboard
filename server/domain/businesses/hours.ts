@@ -24,6 +24,8 @@ export const policySchema = z.object({
 	maxAdvanceDays: z.coerce.number().int().min(1).max(365).default(60),
 	cancellationWindowHours: z.coerce.number().int().min(0).max(24 * 14).default(24),
 	cancellationNote: z.string().trim().max(300).optional().or(z.literal("")),
+	/** Reminder text with {first_name} {business} {service} {date} {time} {staff}; empty = the default. */
+	reminderTemplate: z.string().trim().max(320).optional().or(z.literal("")),
 });
 export type BookingPolicy = z.output<typeof policySchema>;
 

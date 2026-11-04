@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { date, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { tenantPolicy } from "../rls";
 import { services } from "./catalog";
 import { customers } from "./customers";
@@ -29,6 +29,9 @@ export const appointmentStatus = pgEnum("appointment_status", [
 export const paymentStatus = pgEnum("payment_status", ["unpaid", "deposit_paid", "paid_in_full", "partially_refunded", "refunded"]);
 
 export const appointmentSource = pgEnum("appointment_source", ["manual", "online"]);
+
+/** Reminder text state; separate from `status` so a "no" never cancels anything by itself. */
+export const reminderStatus = pgEnum("reminder_status", ["not_sent", "sent", "confirmed", "declined"]);
 
 /** Statuses that occupy the employee's time. Mirrored in the migration's constraint. */
 export const LIVE_STATUSES = ["held", "confirmed", "checked_in"] as const;
@@ -68,6 +71,9 @@ export const appointments = pgTable(
 		holdExpiresAt: timestamp("hold_expires_at", { withTimezone: true }),
 		rescheduledFromId: uuid("rescheduled_from_id"),
 		createdByUserId: uuid("created_by_user_id"),
+		reminderStatus: reminderStatus("reminder_status").notNull().default("not_sent"),
+		reminderSentAt: timestamp("reminder_sent_at", { withTimezone: true }),
+		reminderRepliedAt: timestamp("reminder_replied_at", { withTimezone: true }),
 		...timestamps,
 	},
 	(t) => [
@@ -117,4 +123,27 @@ export const appointmentStatusHistory = pgTable(
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 	},
 	(t) => [index("appointment_status_history_idx").on(t.businessId, t.appointmentId, t.createdAt), tenantPolicy("appointment_status_history")],
+).enableRLS();
+
+/** Clients who want a slot that is not free yet. Open = not booked and not removed. */
+export const waitlistEntries = pgTable(
+	"waitlist_entries",
+	{
+		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+		businessId: uuid("business_id")
+			.notNull()
+			.references(() => businesses.id, { onDelete: "cascade" }),
+		customerId: uuid("customer_id")
+			.notNull()
+			.references(() => customers.id, { onDelete: "cascade" }),
+		employeeId: uuid("employee_id").references(() => employees.id, { onDelete: "set null" }),
+		/** Local date they want; null = any day. */
+		preferredDate: date("preferred_date", { mode: "string" }),
+		note: text("note"),
+		bookedAppointmentId: uuid("booked_appointment_id"),
+		removedAt: timestamp("removed_at", { withTimezone: true }),
+		createdByUserId: uuid("created_by_user_id"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [index("waitlist_entries_business_idx").on(t.businessId, t.preferredDate), tenantPolicy("waitlist_entries")],
 ).enableRLS();

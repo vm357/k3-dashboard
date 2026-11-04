@@ -15,11 +15,20 @@ import { listDay } from "../../../server/domain/appointments/service";
 import { getHours } from "../../../server/domain/businesses/hours";
 import { getBusiness } from "../../../server/domain/businesses/service";
 import { closedDates } from "../../../server/domain/calendar/service";
+import { listNotConfirmed } from "../../../server/domain/reminders/service";
+import { listWaitlist } from "../../../server/domain/waitlist/service";
+import { envContext } from "../../../server/context";
+import { smsConfigured } from "../../../server/sms/send";
 import { listCustomers } from "../../../server/domain/customers/service";
 import { dueForVisit } from "../../../server/domain/reports/service";
 import { formatLocalDate, localDateOf, zonedTimeToUtc } from "../../../server/domain/scheduling/time";
 import { listServices } from "../../../server/domain/services/service";
 import { listEmployees } from "../../../server/domain/staff/service";
+
+const fmtDay = (iso: string) => {
+	const [y, m, dd] = iso.split("-").map(Number);
+	return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(y, m - 1, dd, 12)));
+};
 
 export function meta(): Route.MetaDescriptors {
 	return [{ title: "Today · K3 Dashboard" }];
@@ -41,15 +50,18 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const iso = formatLocalDate(today);
 
 	const canSeeClients = hasPermission(ctx.role, p, "customers.view");
-	const [svc, staff, hours, clients, day, due, panel, closed] = await Promise.all([
+	const canCal = hasPermission(ctx.role, p, "calendar.view_own");
+	const [svc, staff, hours, clients, day, due, panel, closed, waitlist, unconfirmed] = await Promise.all([
 		hasPermission(ctx.role, p, "services.view") ? listServices(db, ctx) : { services: [] },
 		hasPermission(ctx.role, p, "team.view") ? listEmployees(db, ctx) : [],
 		owner ? getHours(db, ctx) : [],
 		canSeeClients ? listCustomers(db, ctx, { limit: 1 }) : [],
 		hasPermission(ctx.role, p, "calendar.view_own") ? listDay(db, ctx, iso) : null,
 		canSeeClients ? dueForVisit(db, ctx, now, 3) : [],
-		loadAppointmentPanel(db, ctx, new URL(request.url)),
+		loadAppointmentPanel(db, ctx, new URL(request.url), { smsReady: smsConfigured(context.get(envContext)) }),
 		closedDates(db, ctx, iso, 1),
+		canCal ? listWaitlist(db, ctx) : [],
+		canCal ? listNotConfirmed(db, ctx, now) : [],
 	]);
 	const holiday = closed[iso] && closed[iso] !== "Closed" ? closed[iso] : null;
 
@@ -95,6 +107,9 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		holiday,
 		due: due.map((x) => ({ ...x, lastVisit: x.lastVisit.toISOString() })),
 		panel,
+		waitlist: waitlist.map((w) => ({ ...w, createdAt: w.createdAt.toISOString() })),
+		unconfirmed: unconfirmed.map((u) => ({ ...u, startAt: u.startAt.toISOString() })),
+		todayIso: iso,
 		multiStaff: new Set(items.map((i) => i.employeeId)).size > 1 || staff.length > 1,
 	};
 }
@@ -164,6 +179,53 @@ export default function Today({ loaderData }: Route.ComponentProps) {
 					</ol>
 				</Card>
 			) : null}
+
+			{d.unconfirmed.length > 0 ? (
+				<Card className="flex flex-col gap-2">
+					<div className="flex items-baseline justify-between">
+						<h2 className="text-base font-bold">Not confirmed yet</h2>
+						<span className="text-sm text-ink-soft">today and tomorrow</span>
+					</div>
+					<ul className="flex flex-col">
+						{d.unconfirmed.map((u) => (
+							<li key={u.id}>
+								<Link to={`?a=${u.id}&remind=1`} className="flex items-center justify-between gap-3 border-b border-hairline py-2.5 last:border-b-0">
+									<span className="flex min-w-0 flex-col">
+										<span className="truncate text-sm font-semibold">{u.customerName}</span>
+										<span className="truncate text-xs text-ink-soft">{formatDate(u.startAt, tz, "full")} · {formatTime(u.startAt, tz)}{d.multiStaff ? ` · ${u.employeeName}` : ""}</span>
+									</span>
+									<span className={`shrink-0 text-xs font-semibold ${u.reminderStatus === "declined" ? "text-danger" : "text-cta"}`}>{u.reminderStatus === "declined" ? "Said no" : u.reminderStatus === "sent" ? "No reply" : "Send reminder"}</span>
+								</Link>
+							</li>
+						))}
+					</ul>
+				</Card>
+			) : null}
+
+			<Card className="flex flex-col gap-2">
+				<div className="flex items-baseline justify-between">
+					<h2 className="text-base font-bold">Waitlist{d.waitlist.length ? ` · ${d.waitlist.length}` : ""}</h2>
+					<Link to={`${base}/waitlist/new`} className="text-sm font-semibold text-cta">Add</Link>
+				</div>
+				{d.waitlist.length === 0 ? <p className="text-sm text-ink-soft">No one waiting.</p> : (
+					<ul className="flex flex-col">
+						{d.waitlist.map((w) => (
+							<li key={w.id} className="flex items-center gap-3 border-b border-hairline py-2.5 last:border-b-0">
+								<Link to={`${base}/clients/${w.customerId}`} className="flex min-w-0 flex-1 flex-col">
+									<span className="truncate text-sm font-semibold">{w.customerName}</span>
+									<span className="truncate text-xs text-ink-soft">{w.preferredDate ? (w.preferredDate === d.todayIso ? "Today" : fmtDay(w.preferredDate)) : "Any day"}{w.employeeName ? ` · with ${w.employeeName}` : ""}{w.note ? ` · ${w.note}` : ""}</span>
+								</Link>
+								<Link to={`${base}/book?client=${w.customerId}&waitlist=${w.id}${w.preferredDate ? `&date=${w.preferredDate}` : ""}`} className="press shrink-0 rounded-pill border border-input-border px-3 py-1.5 text-xs font-semibold text-heading">Book</Link>
+								<Form method="post" action={`${base}/waitlist/new`}>
+									<input type="hidden" name="intent" value="remove" />
+									<input type="hidden" name="id" value={w.id} />
+									<button type="submit" aria-label={`Remove ${w.customerName} from the waitlist`} className="press shrink-0 rounded-pill px-2 py-1.5 text-xs font-semibold text-ink-soft">Remove</button>
+								</Form>
+							</li>
+						))}
+					</ul>
+				)}
+			</Card>
 
 			{timeline.length > 0 ? (
 				<ol aria-label="Today's schedule" className="flex flex-col gap-2">
