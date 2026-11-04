@@ -58,7 +58,7 @@ export function formatCents(cents: number): string {
 
 export const STATUS_LABEL: Record<string, string> = {
 	held: "Held",
-	confirmed: "Confirmed",
+	confirmed: "Booked",
 	checked_in: "Checked in",
 	completed: "Done",
 	cancelled: "Cancelled",

@@ -64,3 +64,26 @@ export const IconReports = (p: ComponentProps<"svg">) => (
 		<path d="M4 19h16M7 16V9M12 16V5M17 16v-6" />
 	</Icon>
 );
+export const IconClose = (p: ComponentProps<"svg">) => (
+	<Icon strokeWidth="2.25" {...p}>
+		<path d="M18 6L6 18M6 6l12 12" />
+	</Icon>
+);
+export const IconNoShow = (p: ComponentProps<"svg">) => (
+	<Icon strokeWidth="2.25" {...p}>
+		<circle cx="9" cy="7" r="4" />
+		<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M17 8l5 5M22 8l-5 5" />
+	</Icon>
+);
+export const IconMove = (p: ComponentProps<"svg">) => (
+	<Icon strokeWidth="2.25" {...p}>
+		<rect x="3" y="4" width="18" height="18" rx="2" />
+		<path d="M16 2v4M8 2v4M3 10h18M10 16h6M14 14l2 2-2 2" />
+	</Icon>
+);
+export const IconCancel = (p: ComponentProps<"svg">) => (
+	<Icon strokeWidth="2.25" {...p}>
+		<circle cx="12" cy="12" r="10" />
+		<path d="M15 9l-6 6M9 9l6 6" />
+	</Icon>
+);

@@ -3,8 +3,10 @@ import type { Route } from "./+types/calendar";
 import type { loader as layoutLoader } from "./business-layout";
 import { IconBack, IconPlus } from "../../components/icons";
 import { Page } from "../../components/shell";
-import { Badge, ButtonLink, EmptyState, PageTitle } from "../../components/ui";
-import { STATUS_LABEL, formatCents, formatDate, formatTime, formatTimeRange } from "../../lib/format";
+import { Badge, ButtonLink, EmptyState } from "../../components/ui";
+import { AppointmentPanel } from "../../components/appointment-panel";
+import { loadAppointmentPanel } from "../../lib/appointment-panel.server";
+import { STATUS_LABEL, formatDate, formatTime, formatTimeRange } from "../../lib/format";
 import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
 import { listDay } from "../../../server/domain/appointments/service";
@@ -25,7 +27,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const param = new URL(request.url).searchParams.get("date");
 	const date = (param && parseLocalDate(param)) || today;
 	const iso = formatLocalDate(date);
-	const day = await listDay(db, ctx, iso);
+	const [day, panel] = await Promise.all([listDay(db, ctx, iso), loadAppointmentPanel(db, ctx, new URL(request.url))]);
 	return {
 		iso,
 		isToday: iso === formatLocalDate(today),
@@ -35,6 +37,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		label: formatDate(new Date(day.items[0]?.startAt ?? Date.UTC(date.year, date.month - 1, date.day, 12)), tz, "full"),
 		items: day.items.map((i) => ({ ...i, startAt: i.startAt.toISOString(), serviceEndAt: i.serviceEndAt.toISOString(), endAt: i.endAt.toISOString() })),
 		employees: day.employees,
+		panel,
 	};
 }
 
@@ -68,12 +71,12 @@ export default function Calendar({ loaderData }: Route.ComponentProps) {
 						return (
 							<li key={i.id} className="grid grid-cols-[56px_minmax(0,1fr)] gap-3">
 								<span className={`pt-3.5 text-sm font-semibold ${i.status === "checked_in" ? "text-heading" : "text-ink-soft"}`}>{formatTime(i.startAt, tz)}</span>
-								<Link to={`${base}/appointments/${i.id}`} className={`press flex items-center gap-3 rounded-card bg-card px-3.5 py-3 shadow-card ${i.status === "checked_in" ? "border-2 border-cta" : ""} ${done ? "opacity-60" : ""}`}>
+								<Link to={`?date=${d.iso}&a=${i.id}`} className={`press flex items-center gap-3 rounded-card bg-card px-3.5 py-3 shadow-card ${i.status === "checked_in" ? "border-2 border-cta" : ""} ${done ? "opacity-60" : ""}`}>
 									<span className="flex min-w-0 flex-1 flex-col gap-0.5">
 										<span className="truncate text-base font-semibold">{i.customerName}</span>
 										<span className="truncate text-sm text-ink-soft">{i.services.join(" + ")} · {formatTimeRange(i.startAt, i.serviceEndAt, tz)}{multi ? ` · ${i.employeeName}` : ""}</span>
 									</span>
-									<Badge variant={i.status === "completed" ? "green" : "neutral"}>{STATUS_LABEL[i.status]}</Badge>
+									{i.status !== "confirmed" ? <Badge variant={i.status === "completed" ? "green" : "neutral"}>{STATUS_LABEL[i.status]}</Badge> : null}
 								</Link>
 							</li>
 						);
@@ -83,7 +86,7 @@ export default function Calendar({ loaderData }: Route.ComponentProps) {
 			<Link to={`${base}/book`} aria-label="New appointment" className="press fixed right-5 bottom-24 z-10 flex h-14 w-14 items-center justify-center rounded-full bg-cta text-on-dark shadow-float lg:hidden">
 				<IconPlus width={26} height={26} />
 			</Link>
-			<span className="hidden">{formatCents(0)}</span>
+			{d.panel ? <AppointmentPanel key={d.panel.appt.id} panel={d.panel} base={base} /> : null}
 		</Page>
 	);
 }

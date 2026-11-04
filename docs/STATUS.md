@@ -38,7 +38,6 @@ out from the Actions tab when the pilot salon is ready to start.
 Not done (still Phase 1):
 
 - Production deploy (manual, behind the `production` environment's reviewer; see `docs/LAUNCH.md`)
-- Invitation emails and password reset: built in phase 6, not yet tested
 - TOTP for admins (phase 8)
 
 ## Phase 2: Dashboard core — done
@@ -132,16 +131,15 @@ Not done: spending from recorded payments (phase 5), marketing consent export, C
 - `.github/workflows/deploy.yml`: staging on push to main (once enabled), production by hand.
 - `docs/LAUNCH.md`: the account setup, in order.
 
-Still needed from Kermit: Neon project and roles, Cloudflare Hyperdrive ids and the custom
-domains, GitHub environment secrets. Resend and Stripe are not needed for the pilot.
+Accounts: done (see Phase 1). Password reset landed in phase 6.
 
-Known gap that should land before the pilot depends on the app: there is no password reset
-(phase 6, Resend). An owner who forgets her password is locked out and the admin cannot help.
-
-## Phase 6 (part): password reset and invitation emails — done locally, staging pending
+## Phase 6 (part): password reset and invitation emails — verified on staging
 
 Designs: `Phase 6 Account Emails.dc.html` (options), picks 1b, 2b, 3a; `Phase 6 Prototype.dc.html`.
 Tests: `npm test`, 108 passing locally on 2026-11-01 (22 in `tests/security/password-reset.test.ts`); typecheck clean.
+Staging, 2026-11-03: reset email delivered from `no-reply@mail.kermitwebcraft.com` and a test-business password reset end to end. First attempt failed with Resend 403 (sender was the unverified `k3dashboard.app`); fixed via `EMAIL_FROM_ADDRESS` in `wrangler.jsonc` and `RESEND_API_KEY` pushed by `deploy.yml`.
+Invitation email delivered on staging the same day (landed in Hotmail spam). `RESEND_API_KEY` set in both GitHub environments.
+Open: deliverability. Check SPF, DKIM and DMARC for `mail.kermitwebcraft.com` in Resend before the pilot.
 
 - `/forgot`: six-digit code by email (Better Auth `emailOTP` plugin, 10 minutes, 3 attempts),
   then a new password on the same route; signs in and lands on the user's home. Same answer
@@ -151,13 +149,31 @@ Tests: `npm test`, 108 passing locally on 2026-11-01 (22 in `tests/security/pass
 - The plugin's public endpoints, OTP sign-in and the link-based reset endpoints are 404 in Hono.
 - `server/email`: Resend over fetch, plain-letter templates (HTML + text) for the reset code and
   the invitation. Development prints to the console without a key; test captures in `outbox`;
-  staging/production need `RESEND_API_KEY` and `EMAIL_FROM_ADDRESS` (default no-reply@k3dashboard.app).
+  staging/production need `RESEND_API_KEY` and `EMAIL_FROM_ADDRESS` (no-reply@mail.kermitwebcraft.com, set in `wrangler.jsonc`).
 - Team: "Send invitation" emails the link and keeps "Copy link to text it"; if sending fails the
   link is shown to copy. Pending rows show when they were emailed; Resend after 24 h issues a
   fresh token (`resendInvitation`, audited `invitation.resend`).
 
-To do before calling it done: `RESEND_API_KEY` as a staging secret, verify the sending domain in Resend,
-and walk the reset and invite flows on staging with a real inbox.
+
+## Dashboard update 1: appointment panel — done locally, staging pending
+
+Design: `K3 Dashboard.dc.html` (appointment sidebar). No migration.
+
+- Appointments open in a panel on the right of Today and Calendar (full screen on phones) instead of
+  their own page. Panel state is in the query string (`?a=`, `&move=`, `&with=`, `&cancel=1`), so every
+  tap is a link and the page underneath stays put. `/appointments/:id` now only redirects to the right
+  day with the panel open (old links and the booking sheet still work) and takes the panel's POSTs.
+- Panel: "With <staff>" line under the client name; one primary action (Check in today, Mark done once
+  checked in); No-show, Move and Cancel as a row of pills; cancel asks for confirmation with an optional
+  reason; Preferences (the pinned note); history shows the logged-in user behind each change.
+- Move: day chips, staff picker when there is more than one bookable person, times from
+  `listMoveSlots` (frozen length, ignores the appointment's own slot). `reschedule` takes an optional
+  `employeeId`; prices and durations stay as booked; the audit row records both employees.
+- "Confirmed" is now "Booked", and the pill is hidden on booked appointments (shown only for
+  Checked in, Done, Cancelled, No-show). Next up: "Check in" checks in directly; "Client notes" is "View client".
+- Today's timeline names the staff member when the salon has more than one.
+- Tests: `tests/domain/appointment-panel.test.ts` (move slots, move to another person, cross-business
+  refusal, panel loader).
 
 ## Known gaps and decisions deferred
 

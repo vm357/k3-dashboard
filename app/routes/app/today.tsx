@@ -1,10 +1,12 @@
-import { Link, useRouteLoaderData } from "react-router";
+import { Form, Link, useRouteLoaderData } from "react-router";
 import type { Route } from "./+types/today";
 import type { loader as layoutLoader } from "./business-layout";
 import { IconCheck, IconPlus } from "../../components/icons";
 import { Page } from "../../components/shell";
-import { Badge, ButtonLink, Card, PageTitle } from "../../components/ui";
+import { Badge, Button, ButtonLink, Card, PageTitle } from "../../components/ui";
+import { AppointmentPanel } from "../../components/appointment-panel";
 import { DueList } from "../../components/due-list";
+import { loadAppointmentPanel } from "../../lib/appointment-panel.server";
 import { STATUS_LABEL, formatDate, formatMinutes, formatTime, formatTimeRange, relativeStart } from "../../lib/format";
 import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
@@ -37,13 +39,14 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const iso = formatLocalDate(today);
 
 	const canSeeClients = hasPermission(ctx.role, p, "customers.view");
-	const [svc, staff, hours, clients, day, due] = await Promise.all([
+	const [svc, staff, hours, clients, day, due, panel] = await Promise.all([
 		hasPermission(ctx.role, p, "services.view") ? listServices(db, ctx) : { services: [] },
 		hasPermission(ctx.role, p, "team.view") ? listEmployees(db, ctx) : [],
 		owner ? getHours(db, ctx) : [],
 		canSeeClients ? listCustomers(db, ctx, { limit: 1 }) : [],
 		hasPermission(ctx.role, p, "calendar.view_own") ? listDay(db, ctx, iso) : null,
 		canSeeClients ? dueForVisit(db, ctx, now, 3) : [],
+		loadAppointmentPanel(db, ctx, new URL(request.url)),
 	]);
 
 	const setup = owner
@@ -86,6 +89,8 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		count: items.length,
 		closedToday: owner && hours.length > 0 && !todaysHours,
 		due: due.map((x) => ({ ...x, lastVisit: x.lastVisit.toISOString() })),
+		panel,
+		multiStaff: new Set(items.map((i) => i.employeeId)).size > 1 || staff.length > 1,
 	};
 }
 
@@ -115,8 +120,15 @@ export default function Today({ loaderData }: Route.ComponentProps) {
 							<span className="text-sm text-on-dark-soft">{formatTime(d.next.startAt, tz)} · {d.next.services.join(" + ")} · {formatMinutes(Math.round((new Date(d.next.serviceEndAt).getTime() - new Date(d.next.startAt).getTime()) / 60000))}</span>
 						</div>
 						<div className="mt-1 flex gap-2">
-							<ButtonLink to={`${base}/appointments/${d.next.id}`} variant="inverted" size="sm">{d.next.status === "checked_in" ? "Open" : "Check in"}</ButtonLink>
-							<ButtonLink to={`${base}/clients/${d.next.customerId}`} variant="outlinedOnDark" size="sm">Client notes</ButtonLink>
+							{d.next.status === "checked_in" ? (
+								<ButtonLink to={`?a=${d.next.id}`} variant="inverted" size="sm">Open</ButtonLink>
+							) : (
+								<Form method="post" action={`${base}/appointments/${d.next.id}`}>
+									<input type="hidden" name="returnTo" value={base} />
+									<Button type="submit" name="intent" value="checked_in" variant="inverted" size="sm">Check in</Button>
+								</Form>
+							)}
+							<ButtonLink to={`${base}/clients/${d.next.customerId}`} variant="outlinedOnDark" size="sm">View client</ButtonLink>
 						</div>
 					</>
 				) : (
@@ -153,12 +165,12 @@ export default function Today({ loaderData }: Route.ComponentProps) {
 						t.kind === "appt" ? (
 							<li key={t.i.id} className="grid grid-cols-[56px_minmax(0,1fr)] gap-3">
 								<span className={`pt-3.5 text-sm font-semibold ${t.i.id === d.next?.id ? "text-heading" : "text-ink-soft"}`}>{formatTime(t.i.startAt, tz)}</span>
-								<Link to={`${base}/appointments/${t.i.id}`} className={`press flex items-center gap-3 rounded-card bg-card px-3.5 py-3 shadow-card ${t.i.id === d.next?.id ? "border-2 border-cta" : ""} ${t.i.status === "completed" || t.i.status === "no_show" ? "opacity-60" : ""}`}>
+								<Link to={`?a=${t.i.id}`} className={`press flex items-center gap-3 rounded-card bg-card px-3.5 py-3 shadow-card ${t.i.id === d.next?.id ? "border-2 border-cta" : ""} ${t.i.status === "completed" || t.i.status === "no_show" ? "opacity-60" : ""}`}>
 									<span className="flex min-w-0 flex-1 flex-col gap-0.5">
 										<span className="truncate text-base font-semibold">{t.i.customerName}</span>
-										<span className="truncate text-sm text-ink-soft">{t.i.services.join(" + ")} · {formatTimeRange(t.i.startAt, t.i.serviceEndAt, tz)}</span>
+										<span className="truncate text-sm text-ink-soft">{t.i.services.join(" + ")} · {formatTimeRange(t.i.startAt, t.i.serviceEndAt, tz)}{d.multiStaff ? ` · ${t.i.employeeName}` : ""}</span>
 									</span>
-									<Badge variant={t.i.status === "completed" ? "green" : d.unfinished.includes(t.i.id) ? "danger" : "neutral"}>{d.unfinished.includes(t.i.id) ? "Mark done" : STATUS_LABEL[t.i.status]}</Badge>
+									{d.unfinished.includes(t.i.id) ? <Badge variant="danger">Mark done</Badge> : t.i.status !== "confirmed" ? <Badge variant={t.i.status === "completed" ? "green" : "neutral"}>{STATUS_LABEL[t.i.status]}</Badge> : null}
 								</Link>
 							</li>
 						) : (
@@ -181,6 +193,7 @@ export default function Today({ loaderData }: Route.ComponentProps) {
 			<Link to={`${base}/book`} aria-label="New appointment" className="press fixed right-5 bottom-24 z-10 flex h-14 w-14 items-center justify-center rounded-full bg-cta text-on-dark shadow-float lg:hidden">
 				<IconPlus width={26} height={26} />
 			</Link>
+			{d.panel ? <AppointmentPanel key={d.panel.appt.id} panel={d.panel} base={base} /> : null}
 		</Page>
 	);
 }

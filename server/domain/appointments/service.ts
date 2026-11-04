@@ -15,6 +15,7 @@ import {
 	employees,
 	services,
 	timeBlocks,
+	users,
 	LIVE_STATUSES,
 } from "../../db/schema";
 import { withTenant } from "../../db/tenant";
@@ -202,18 +203,45 @@ export async function transition(db: Db, ctx: TenantCtx, id: string, to: Appoint
 	});
 }
 
-/** Reschedule = a new confirmed row linked to the old one, which becomes `rescheduled`. */
-export async function reschedule(db: Db, ctx: TenantCtx, id: string, startAt: Date) {
+/**
+ * Open starts for moving an appointment: same length as booked (frozen durations and buffer),
+ * on any visible staff member's day, ignoring the appointment's own current slot.
+ */
+export async function listMoveSlots(db: Db, ctx: TenantCtx, id: string, args: { employeeId?: string; date: string; now?: Date }) {
+	require(ctx, "calendar.view_own");
+	const date = parseLocalDate(args.date);
+	if (!date) throw new DomainError("bad_date");
+	return withTenant(db, ctx, async (tx) => {
+		const [old] = await tx.select().from(appointments).where(and(eq(appointments.id, id), eq(appointments.businessId, ctx.businessId)));
+		if (!old) throw new DomainError("appointment_not_found");
+		const employeeId = args.employeeId ?? old.employeeId;
+		if (!(await visibleEmployeeIds(tx, ctx)).includes(employeeId)) throw new DomainError("employee_not_found");
+		const totalMinutes = Math.round((old.endAt.getTime() - old.startAt.getTime()) / 60000);
+		const day = await loadDayContext(tx, ctx, employeeId, date, old.id);
+		return availableStarts({ ...day, date, totalMinutes, now: args.now ?? new Date(), ignoreNotice: true });
+	});
+}
+
+/**
+ * Reschedule = a new confirmed row linked to the old one, which becomes `rescheduled`.
+ * Pass `employeeId` to move it to someone else; prices and durations stay as booked.
+ */
+export async function reschedule(db: Db, ctx: TenantCtx, id: string, startAt: Date, employeeId?: string) {
 	return withTenant(db, ctx, async (tx) => {
 		const [old] = await tx.select().from(appointments).where(and(eq(appointments.id, id), eq(appointments.businessId, ctx.businessId)));
 		if (!old) throw new DomainError("appointment_not_found");
 		await assertEmployeeAccess(tx, ctx, old.employeeId);
 		if (!TRANSITIONS[old.status].includes("rescheduled")) throw new DomainError("bad_transition");
+		const toEmployeeId = employeeId ?? old.employeeId;
+		if (toEmployeeId !== old.employeeId) {
+			const emp = await assertEmployeeAccess(tx, ctx, toEmployeeId);
+			if (!emp.active) throw new DomainError("employee_inactive", "That person is not taking bookings");
+		}
 		const items = await tx.select().from(appointmentServices).where(eq(appointmentServices.appointmentId, id)).orderBy(asc(appointmentServices.sortOrder));
 		const serviceMinutes = items.reduce((n, s) => n + s.durationMinutes, 0);
 		const totalMinutes = Math.round((old.endAt.getTime() - old.startAt.getTime()) / 60000);
 		const tz = await tzOf(tx, ctx);
-		const day = await loadDayContext(tx, ctx, old.employeeId, localDateOf(startAt, tz), old.id);
+		const day = await loadDayContext(tx, ctx, toEmployeeId, localDateOf(startAt, tz), old.id);
 		if (!fits({ ...day, date: localDateOf(startAt, tz), totalMinutes }, startAt)) throw new DomainError("slot_unavailable", "That time is not available");
 
 		// Release the old slot first so the new row can take an overlapping time.
@@ -226,7 +254,7 @@ export async function reschedule(db: Db, ctx: TenantCtx, id: string, startAt: Da
 				.values({
 					businessId: ctx.businessId,
 					customerId: old.customerId,
-					employeeId: old.employeeId,
+					employeeId: toEmployeeId,
 					startAt,
 					serviceEndAt: new Date(startAt.getTime() + serviceMinutes * 60000),
 					endAt: new Date(startAt.getTime() + totalMinutes * 60000),
@@ -248,7 +276,7 @@ export async function reschedule(db: Db, ctx: TenantCtx, id: string, startAt: Da
 		}
 		await tx.insert(appointmentServices).values(items.map(({ id: _id, appointmentId: _a, ...s }) => ({ ...s, appointmentId: created.id })));
 		await tx.insert(appointmentStatusHistory).values({ businessId: ctx.businessId, appointmentId: created.id, fromStatus: null, toStatus: "confirmed", actorUserId: ctx.userId, reason: `rescheduled from ${old.id}` });
-		await recordAudit(tx, { businessId: ctx.businessId, actorUserId: ctx.userId, action: "appointment.reschedule", targetTable: "appointments", targetId: created.id, before: { startAt: old.startAt }, after: { startAt } });
+		await recordAudit(tx, { businessId: ctx.businessId, actorUserId: ctx.userId, action: "appointment.reschedule", targetTable: "appointments", targetId: created.id, before: { startAt: old.startAt, employeeId: old.employeeId }, after: { startAt, employeeId: toEmployeeId } });
 		return created;
 	});
 }
@@ -343,7 +371,13 @@ export async function getAppointment(db: Db, ctx: TenantCtx, id: string) {
 		const visible = await visibleEmployeeIds(tx, ctx);
 		if (!visible.includes(r.appt.employeeId)) return null;
 		const items = await tx.select().from(appointmentServices).where(eq(appointmentServices.appointmentId, id)).orderBy(asc(appointmentServices.sortOrder));
-		const history = await tx.select().from(appointmentStatusHistory).where(eq(appointmentStatusHistory.appointmentId, id)).orderBy(asc(appointmentStatusHistory.createdAt));
+		// Who did it: the logged-in user behind each change (null for system changes like hold expiry).
+		const history = await tx
+			.select({ id: appointmentStatusHistory.id, fromStatus: appointmentStatusHistory.fromStatus, toStatus: appointmentStatusHistory.toStatus, reason: appointmentStatusHistory.reason, createdAt: appointmentStatusHistory.createdAt, actorName: users.name })
+			.from(appointmentStatusHistory)
+			.leftJoin(users, eq(users.id, appointmentStatusHistory.actorUserId))
+			.where(eq(appointmentStatusHistory.appointmentId, id))
+			.orderBy(asc(appointmentStatusHistory.createdAt));
 		const tz = await tzOf(tx, ctx);
 		return {
 			...r.appt,

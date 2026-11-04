@@ -1,23 +1,25 @@
-# Phase 6 changes
+# Dashboard update 1: appointment panel
 
 Copy everything in this folder over the root of your k3-dashboard repo (same paths), then:
 
-```sh
-npm test            # expect 10 test files; the new one is tests/security/password-reset.test.ts
-npm run typecheck
-```
+    npm test
+    npm run typecheck
 
-New files: server/email/templates.ts, server/email/send.ts, server/http/throttle.ts,
-app/routes/auth/forgot.tsx, tests/security/password-reset.test.ts.
+and push to main. No database migration in this update.
 
-Changed files: server/auth/auth.ts, server/env.ts, server/api/app.ts, app/routes.ts,
-app/routes/auth/sign-in.tsx, server/domain/invitations/service.ts, app/routes/app/team.tsx,
-tests/helpers/server.ts, docs/STATUS.md.
+New
+- app/components/appointment-panel.tsx
+- app/lib/appointment-panel.server.ts
+- tests/domain/appointment-panel.test.ts
 
-If you edited any changed file locally since you uploaded the repo, diff before overwriting.
+Changed
+- app/routes/app/appointment.tsx (now redirect + actions only)
+- app/routes/app/today.tsx
+- app/routes/app/calendar.tsx
+- app/components/icons.tsx (four icons added)
+- app/lib/format.ts ("Confirmed" → "Booked")
+- server/domain/appointments/service.ts (listMoveSlots, reschedule to another person, who-did-it on history)
+- docs/STATUS.md (includes the phase 6 notes; replaces yours)
 
-## Sender domain fix
-
-- `wrangler.jsonc`: staging and production send from `no-reply@mail.kermitwebcraft.com` (the domain verified in Resend). Resend returned 403 for the old `k3dashboard.app` address.
-- `server/env.ts`: same default.
-- `.github/workflows/deploy.yml`: pushes `RESEND_API_KEY` to the Worker on every deploy. Add it under GitHub → Settings → Environments → staging (and production).
+Check on staging: open an appointment from Today and from Calendar, check in from Next up,
+move one to another day and to another person, cancel one, and look at the history names.
