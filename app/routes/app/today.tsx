@@ -6,6 +6,7 @@ import { Page } from "../../components/shell";
 import { Badge, Button, ButtonLink, Card, PageTitle } from "../../components/ui";
 import { AppointmentPanel } from "../../components/appointment-panel";
 import { DueList } from "../../components/due-list";
+import { AllergyFlag, ClientTag } from "../../components/client-tags";
 import { loadAppointmentPanel } from "../../lib/appointment-panel.server";
 import { STATUS_LABEL, formatDate, formatMinutes, formatTime, formatTimeRange, relativeStart } from "../../lib/format";
 import { hasPermission } from "../../../server/auth/permissions";
@@ -116,9 +117,10 @@ export default function Today({ loaderData }: Route.ComponentProps) {
 					<>
 						<span className="text-sm text-on-dark-soft">{d.next.status === "checked_in" ? "In the chair" : `Next up · ${relativeStart(d.next.startAt, now) ?? formatTime(d.next.startAt, tz)}`}</span>
 						<div className="flex flex-col gap-0.5">
-							<span className="text-2xl font-bold">{d.next.customerName}</span>
+							<span className="flex flex-wrap items-center gap-2"><span className="text-2xl font-bold">{d.next.customerName}</span><ClientTag status={d.next.clientStatus} /></span>
 							<span className="text-sm text-on-dark-soft">{formatTime(d.next.startAt, tz)} · {d.next.services.join(" + ")} · {formatMinutes(Math.round((new Date(d.next.serviceEndAt).getTime() - new Date(d.next.startAt).getTime()) / 60000))}</span>
 						</div>
+						{d.next.allergy ? <p className="rounded-card bg-[#fbeceb] px-3 py-2 text-sm text-danger"><span className="font-bold">Allergy:</span> <span className="text-ink">{d.next.allergy}</span></p> : null}
 						<div className="mt-1 flex gap-2">
 							{d.next.status === "checked_in" ? (
 								<ButtonLink to={`?a=${d.next.id}`} variant="inverted" size="sm">Open</ButtonLink>
@@ -167,7 +169,7 @@ export default function Today({ loaderData }: Route.ComponentProps) {
 								<span className={`pt-3.5 text-sm font-semibold ${t.i.id === d.next?.id ? "text-heading" : "text-ink-soft"}`}>{formatTime(t.i.startAt, tz)}</span>
 								<Link to={`?a=${t.i.id}`} className={`press flex items-center gap-3 rounded-card bg-card px-3.5 py-3 shadow-card ${t.i.id === d.next?.id ? "border-2 border-cta" : ""} ${t.i.status === "completed" || t.i.status === "no_show" ? "opacity-60" : ""}`}>
 									<span className="flex min-w-0 flex-1 flex-col gap-0.5">
-										<span className="truncate text-base font-semibold">{t.i.customerName}</span>
+										<span className="flex min-w-0 items-center gap-2"><span className="truncate text-base font-semibold">{t.i.customerName}</span><AllergyFlag allergy={t.i.allergy} /></span>
 										<span className="truncate text-sm text-ink-soft">{t.i.services.join(" + ")} · {formatTimeRange(t.i.startAt, t.i.serviceEndAt, tz)}{d.multiStaff ? ` · ${t.i.employeeName}` : ""}</span>
 									</span>
 									{d.unfinished.includes(t.i.id) ? <Badge variant="danger">Mark done</Badge> : t.i.status !== "confirmed" ? <Badge variant={t.i.status === "completed" ? "green" : "neutral"}>{STATUS_LABEL[t.i.status]}</Badge> : null}

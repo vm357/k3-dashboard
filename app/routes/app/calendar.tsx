@@ -5,6 +5,7 @@ import { IconBack, IconPlus } from "../../components/icons";
 import { Page } from "../../components/shell";
 import { Badge, ButtonLink, EmptyState } from "../../components/ui";
 import { AppointmentPanel } from "../../components/appointment-panel";
+import { AllergyFlag } from "../../components/client-tags";
 import { loadAppointmentPanel } from "../../lib/appointment-panel.server";
 import { STATUS_LABEL, formatDate, formatTime, formatTimeRange } from "../../lib/format";
 import { hasPermission } from "../../../server/auth/permissions";
@@ -73,7 +74,7 @@ export default function Calendar({ loaderData }: Route.ComponentProps) {
 								<span className={`pt-3.5 text-sm font-semibold ${i.status === "checked_in" ? "text-heading" : "text-ink-soft"}`}>{formatTime(i.startAt, tz)}</span>
 								<Link to={`?date=${d.iso}&a=${i.id}`} className={`press flex items-center gap-3 rounded-card bg-card px-3.5 py-3 shadow-card ${i.status === "checked_in" ? "border-2 border-cta" : ""} ${done ? "opacity-60" : ""}`}>
 									<span className="flex min-w-0 flex-1 flex-col gap-0.5">
-										<span className="truncate text-base font-semibold">{i.customerName}</span>
+										<span className="flex min-w-0 items-center gap-2"><span className="truncate text-base font-semibold">{i.customerName}</span><AllergyFlag allergy={i.allergy} /></span>
 										<span className="truncate text-sm text-ink-soft">{i.services.join(" + ")} · {formatTimeRange(i.startAt, i.serviceEndAt, tz)}{multi ? ` · ${i.employeeName}` : ""}</span>
 									</span>
 									{i.status !== "confirmed" ? <Badge variant={i.status === "completed" ? "green" : "neutral"}>{STATUS_LABEL[i.status]}</Badge> : null}

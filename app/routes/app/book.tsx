@@ -4,6 +4,7 @@ import type { loader as layoutLoader } from "./business-layout";
 import { Sheet } from "../../components/sheet";
 import { Avatar, Button, Field } from "../../components/ui";
 import { IconCheck } from "../../components/icons";
+import { AllergyFlag, ClientTag } from "../../components/client-tags";
 import { formatCents, formatMinutes, formatPhone, formatTime } from "../../lib/format";
 import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
@@ -94,6 +95,7 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 		if (e.status === 403) throw new Response("Forbidden", { status: 403 });
 		if (e.code === "slot_taken" || e.code === "slot_unavailable") return { error: "That time was just taken. Pick another." };
 		if (e.code === "customer_required") return { error: "Pick a client or add a new one." };
+		if (e.code === "do_not_book" || e.code === "customer_archived") return { error: e.message ?? "This client cannot be booked." };
 		return { error: e.message?.startsWith("[") ? "Check the form and try again." : (e.message ?? "Could not book. Try again.") };
 	}
 }
@@ -173,7 +175,7 @@ export default function Book({ loaderData, actionData }: Route.ComponentProps) {
 					<div className="flex items-center gap-3 rounded-card bg-card px-3 py-2.5 shadow-card">
 						<Avatar name={fullName(d.client)} size={36} />
 						<div className="flex min-w-0 flex-1 flex-col">
-							<span className="truncate text-sm font-semibold">{fullName(d.client)}</span>
+							<span className="flex min-w-0 items-center gap-2"><span className="truncate text-sm font-semibold">{fullName(d.client)}</span><ClientTag status={d.client.status} isNew={d.client.isNew} /><AllergyFlag allergy={d.client.allergy} /></span>
 							<span className="truncate text-xs text-ink-soft">{d.client.phone && d.client.phone !== "hidden" ? formatPhone(d.client.phone) : "Returning client"}</span>
 						</div>
 						<IconCheck width={20} height={20} className="text-cta" />
@@ -200,7 +202,7 @@ export default function Book({ loaderData, actionData }: Route.ComponentProps) {
 									<li key={c.id}>
 										<Link to={href({ client: c.id, new: false })} className="press flex w-full items-center gap-3 border-b border-hairline px-3 py-2.5 text-left last:border-b-0">
 											<Avatar name={fullName(c)} size={32} />
-											<span className="flex min-w-0 flex-col"><span className="truncate text-sm font-semibold">{fullName(c)}</span><span className="truncate text-xs text-ink-soft">{c.phone && c.phone !== "hidden" ? formatPhone(c.phone) : ""}</span></span>
+											<span className="flex min-w-0 flex-col"><span className="flex min-w-0 items-center gap-2"><span className="truncate text-sm font-semibold">{fullName(c)}</span><ClientTag status={c.status} isNew={c.isNew} /></span><span className="truncate text-xs text-ink-soft">{c.phone && c.phone !== "hidden" ? formatPhone(c.phone) : ""}</span></span>
 										</Link>
 									</li>
 								))}
@@ -213,8 +215,10 @@ export default function Book({ loaderData, actionData }: Route.ComponentProps) {
 				)}
 			</section>
 
+			{d.client?.status === "do_not_book" ? <p role="alert" className="mb-3 rounded-card border border-danger bg-[#fbeceb] px-3.5 py-3 text-sm text-danger">Marked <span className="font-bold">Do not book</span>. Change their status on the client profile to book them.</p> : null}
+
 			{/* 2. Services */}
-			{clientChosen ? (
+			{clientChosen && d.client?.status !== "do_not_book" ? (
 				<section className="mb-5 flex flex-col gap-2">
 					<div className="flex items-baseline justify-between">
 						<h2 className="text-sm font-bold">Services</h2>

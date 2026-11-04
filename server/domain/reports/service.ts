@@ -119,7 +119,7 @@ export async function dueForVisit(db: Db, ctx: TenantCtx, now = new Date(), limi
 			.select({ customerId: appointments.customerId, firstName: customers.firstName, lastName: customers.lastName, startAt: appointments.startAt, status: appointments.status })
 			.from(appointments)
 			.innerJoin(customers, eq(customers.id, appointments.customerId))
-			.where(and(eq(appointments.businessId, ctx.businessId), inArray(appointments.status, ["completed", "confirmed", "checked_in"]), sql`${customers.mergedIntoId} is null`))
+			.where(and(eq(appointments.businessId, ctx.businessId), inArray(appointments.status, ["completed", "confirmed", "checked_in"]), sql`${customers.mergedIntoId} is null and ${customers.archivedAt} is null and ${customers.status} <> 'do_not_book'`))
 			.orderBy(asc(appointments.startAt));
 		const by = new Map<string, { name: string; completed: Date[]; hasUpcoming: boolean }>();
 		for (const r of rows) {

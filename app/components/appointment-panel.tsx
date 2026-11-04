@@ -2,6 +2,7 @@ import { Form, Link, useLocation, useNavigation } from "react-router";
 import type { AppointmentPanelData } from "../lib/appointment-panel.server";
 import { IconCancel, IconClose, IconMove, IconNoShow } from "./icons";
 import { Avatar, Badge, Field } from "./ui";
+import { AllergyNotice, ClientTag } from "./client-tags";
 import { STATUS_LABEL, formatCents, formatDate, formatMinutes, formatPhone, formatTime, formatTimeRange } from "../lib/format";
 
 const PANEL_KEYS = ["a", "move", "with", "cancel", "err", "booked"];
@@ -53,6 +54,7 @@ export function AppointmentPanel({ panel, base }: { panel: AppointmentPanelData;
 						<div className="flex flex-wrap items-center gap-2">
 							<h2 id="appt-title" className="text-2xl font-bold text-heading">{a.customerName}</h2>
 							{a.status !== "confirmed" ? <Badge variant={a.status === "completed" ? "green" : "neutral"}>{STATUS_LABEL[a.status]}</Badge> : null}
+							<ClientTag status={a.clientStatus} />
 						</div>
 						<div aria-label="Staff member" className="mt-1 flex items-center gap-2">
 							<Avatar name={a.employeeName} size={28} />
@@ -64,6 +66,7 @@ export function AppointmentPanel({ panel, base }: { panel: AppointmentPanelData;
 				</div>
 
 				<div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 pb-6">
+					<AllergyNotice allergy={a.allergy} />
 					{panel.booked ? <p role="status" className="rounded-card bg-mint px-4 py-3 text-sm font-semibold text-heading">Booked.</p> : null}
 					{panel.err ? <p role="alert" className="rounded-card bg-card px-4 py-3 text-sm text-danger shadow-card">{panel.err === "taken" ? "That time is not available any more. Pick another." : "That did not work. Try again."}</p> : null}
 

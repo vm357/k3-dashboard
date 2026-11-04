@@ -175,6 +175,27 @@ Design: `K3 Dashboard.dc.html` (appointment sidebar). No migration.
 - Tests: `tests/domain/appointment-panel.test.ts` (move slots, move to another person, cross-business
   refusal, panel loader).
 
+## Dashboard update 2: client info — done locally, staging pending
+
+Design: `K3 Dashboard.dc.html` (Clients tab, client sidebar). Migration `0007_client_info`.
+
+- Customers get `status` (Active, VIP, Inactive, Do not book; default Active), `allergy` and
+  `archived_at`. "New" is derived: Active with no completed visits.
+- Tags show on the client list, profile, booking sheet, appointment panel and Next up. Active has no
+  pill. Allergies show as a red "Allergy" flag in lists and the schedule and as a red notice with the
+  text on the profile, the appointment panel and Next up.
+- Clients list: status filters (All, VIP, New, Inactive, Do not book, Archived), sort by first or last
+  name, 10 per page.
+- Profile: status picker; "Always" is now Preferences; the newest dated note is labelled Last visit;
+  Allergies field in Details. Archive is a red pill inside Details with a confirmation, refused while
+  the client has upcoming bookings. Archived clients are hidden from lists, search, booking and Due
+  for a visit, and can be restored.
+- Delete permanently: owner only, archived clients only. No visits on record: the row is deleted.
+  With visits: name, contact, notes and allergy are erased and the visits stay as "Deleted client".
+- Booking refuses archived and Do not book clients (server-side; the sheet says why).
+- Tests: `tests/domain/client-info.test.ts` (derivation, filters, booking refusal, archive guard,
+  Due for a visit, delete and erase, cross-business refusal).
+
 ## Known gaps and decisions deferred
 
 - Self-serve signup is disabled in production until phase 8; accounts come from invitations or admin onboarding.

@@ -148,8 +148,10 @@ export async function bookAppointment(db: Db, ctx: TenantCtx, raw: BookingInput)
 			const created = await createCustomerInTx(tx, ctx, input.newCustomer);
 			customerId = created.id;
 		} else if (customerId) {
-			const [c] = await tx.select({ id: customers.id }).from(customers).where(and(eq(customers.id, customerId), eq(customers.businessId, ctx.businessId)));
+			const [c] = await tx.select({ id: customers.id, status: customers.status, archivedAt: customers.archivedAt }).from(customers).where(and(eq(customers.id, customerId), eq(customers.businessId, ctx.businessId)));
 			if (!c) throw new DomainError("customer_not_found");
+			if (c.archivedAt) throw new DomainError("customer_archived", "This client is archived. Restore them first.");
+			if (c.status === "do_not_book") throw new DomainError("do_not_book", "This client is marked Do not book.");
 		}
 
 		const svc = await resolveServices(tx, ctx, emp.id, input.serviceIds);
@@ -295,6 +297,8 @@ export interface DayAppointment {
 	customerName: string;
 	services: string[];
 	note: string | null;
+	allergy: string | null;
+	clientStatus: (typeof customers.$inferSelect)["status"];
 }
 
 /** Appointments for one local day across the staff the caller may see. */
@@ -324,6 +328,8 @@ export async function listDay(db: Db, ctx: TenantCtx, dateIso: string): Promise<
 				firstName: customers.firstName,
 				lastName: customers.lastName,
 				note: appointments.note,
+				allergy: customers.allergy,
+				clientStatus: customers.status,
 			})
 			.from(appointments)
 			.innerJoin(employees, eq(employees.id, appointments.employeeId))
@@ -346,6 +352,8 @@ export async function listDay(db: Db, ctx: TenantCtx, dateIso: string): Promise<
 			customerName: [r.firstName, r.lastName].filter(Boolean).join(" "),
 			services: svcRows.filter((s) => s.appointmentId === r.id).map((s) => s.name),
 			note: r.note,
+			allergy: r.allergy,
+			clientStatus: r.clientStatus,
 		}));
 		return { date, timeZone: tz, items, employees: emps.filter((e) => visibleEmployees.includes(e.id)) };
 	});
@@ -362,6 +370,8 @@ export async function getAppointment(db: Db, ctx: TenantCtx, id: string) {
 				lastName: customers.lastName,
 				phone: customers.phone,
 				pinnedNote: customers.pinnedNote,
+				allergy: customers.allergy,
+				clientStatus: customers.status,
 			})
 			.from(appointments)
 			.innerJoin(employees, eq(employees.id, appointments.employeeId))
@@ -385,6 +395,8 @@ export async function getAppointment(db: Db, ctx: TenantCtx, id: string) {
 			customerName: [r.firstName, r.lastName].filter(Boolean).join(" "),
 			customerPhone: can(ctx, "customers.view_contact") ? r.phone : null,
 			pinnedNote: r.pinnedNote,
+			allergy: r.allergy,
+			clientStatus: r.clientStatus,
 			services: items,
 			history,
 			timeZone: tz,

@@ -1,7 +1,10 @@
 import { sql } from "drizzle-orm";
-import { boolean, index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { tenantPolicy } from "../rls";
 import { businesses } from "./tenants";
+
+/** Set by staff. "New" is not stored: it means no completed visits yet. */
+export const clientStatus = pgEnum("client_status", ["active", "vip", "inactive", "do_not_book"]);
 
 /**
  * Customers are per business, by design. The same person at two salons is two rows
@@ -19,8 +22,13 @@ export const customers = pgTable(
 		lastName: text("last_name"),
 		email: text("email"),
 		phone: text("phone"),
-		/** Pinned "Always" note shown first on the profile (ADR 004). */
+		/** Pinned note, shown as "Preferences" on the profile and the appointment panel. */
 		pinnedNote: text("pinned_note"),
+		/** Allergies or sensitivities; shown as a red flag everywhere the client appears. */
+		allergy: text("allergy"),
+		status: clientStatus("status").notNull().default("active"),
+		/** Archived clients are hidden from lists, search and booking; history is kept. */
+		archivedAt: timestamp("archived_at", { withTimezone: true }),
 		preferences: jsonb("preferences").$type<Record<string, unknown>>().notNull().default({}),
 		marketingConsent: boolean("marketing_consent").notNull().default(false),
 		marketingConsentAt: timestamp("marketing_consent_at", { withTimezone: true }),
