@@ -14,6 +14,7 @@ import { requireTenant, services } from "../../../server/auth/session";
 import { listDay } from "../../../server/domain/appointments/service";
 import { getHours } from "../../../server/domain/businesses/hours";
 import { getBusiness } from "../../../server/domain/businesses/service";
+import { closedDates } from "../../../server/domain/calendar/service";
 import { listCustomers } from "../../../server/domain/customers/service";
 import { dueForVisit } from "../../../server/domain/reports/service";
 import { formatLocalDate, localDateOf, zonedTimeToUtc } from "../../../server/domain/scheduling/time";
@@ -40,7 +41,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const iso = formatLocalDate(today);
 
 	const canSeeClients = hasPermission(ctx.role, p, "customers.view");
-	const [svc, staff, hours, clients, day, due, panel] = await Promise.all([
+	const [svc, staff, hours, clients, day, due, panel, closed] = await Promise.all([
 		hasPermission(ctx.role, p, "services.view") ? listServices(db, ctx) : { services: [] },
 		hasPermission(ctx.role, p, "team.view") ? listEmployees(db, ctx) : [],
 		owner ? getHours(db, ctx) : [],
@@ -48,7 +49,9 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		hasPermission(ctx.role, p, "calendar.view_own") ? listDay(db, ctx, iso) : null,
 		canSeeClients ? dueForVisit(db, ctx, now, 3) : [],
 		loadAppointmentPanel(db, ctx, new URL(request.url)),
+		closedDates(db, ctx, iso, 1),
 	]);
+	const holiday = closed[iso] && closed[iso] !== "Closed" ? closed[iso] : null;
 
 	const setup = owner
 		? [
@@ -68,7 +71,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const seen = items.filter((i) => i.status === "completed").length;
 	const todaysHours = hours.find((h) => h.weekday === new Date(Date.UTC(today.year, today.month - 1, today.day)).getUTCDay()) ?? null;
 	const gaps: { startAt: string; endAt: string }[] = [];
-	if (todaysHours) {
+	if (todaysHours && !holiday) {
 		let cursor = Math.max(zonedTimeToUtc(today, todaysHours.opensAt, tz).getTime(), now.getTime());
 		const close = zonedTimeToUtc(today, todaysHours.closesAt, tz).getTime();
 		for (const i of live) {
@@ -88,7 +91,8 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		timeZone: tz,
 		now: now.toISOString(),
 		count: items.length,
-		closedToday: owner && hours.length > 0 && !todaysHours,
+		closedToday: (owner && hours.length > 0 && !todaysHours) || !!holiday,
+		holiday,
 		due: due.map((x) => ({ ...x, lastVisit: x.lastVisit.toISOString() })),
 		panel,
 		multiStaff: new Set(items.map((i) => i.employeeId)).size > 1 || staff.length > 1,
@@ -136,7 +140,7 @@ export default function Today({ loaderData }: Route.ComponentProps) {
 				) : (
 					<>
 						<span className="text-sm text-on-dark-soft">{d.unfinished.length > 0 ? "Wrap up" : "Next up"}</span>
-						<span className="text-2xl font-bold">{d.unfinished.length > 0 ? `${d.unfinished.length} to mark done` : d.count > 0 ? "All done for today" : d.closedToday ? "Closed today" : "No one yet"}</span>
+						<span className="text-2xl font-bold">{d.unfinished.length > 0 ? `${d.unfinished.length} to mark done` : d.count > 0 ? "All done for today" : d.closedToday ? (d.holiday ? `Closed · ${d.holiday}` : "Closed today") : "No one yet"}</span>
 						<span className="text-sm text-on-dark-soft">{d.unfinished.length > 0 ? "Tap each visit below and mark it done or no-show." : d.count > 0 ? `${d.seen} ${d.seen === 1 ? "client" : "clients"} seen.` : "Book a walk-in or set up tomorrow."}</span>
 					</>
 				)}

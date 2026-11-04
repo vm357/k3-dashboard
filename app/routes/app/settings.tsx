@@ -8,7 +8,13 @@ import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
 import { getHours, getPolicy, policySchema, setHours, setPolicy } from "../../../server/domain/businesses/hours";
 import { updateBusinessSettings } from "../../../server/domain/businesses/service";
+import { addClosedDays, listClosedDays, removeClosedDay } from "../../../server/domain/calendar/service";
 import { WEEKDAYS } from "../../../server/domain/staff/service";
+
+const fmtDay = (iso: string) => {
+	const [y, m, d] = iso.split("-").map(Number);
+	return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(y, m - 1, d, 12)));
+};
 
 export function meta(): Route.MetaDescriptors {
 	return [{ title: "Settings · K3 Dashboard" }];
@@ -18,8 +24,8 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const { db, auth } = services(context);
 	const { ctx } = await requireTenant(db, auth, request, params.business!);
 	if (!hasPermission(ctx.role, [...ctx.permissions], "settings.view")) throw new Response("Forbidden", { status: 403 });
-	const [hours, policy] = await Promise.all([getHours(db, ctx), getPolicy(db, ctx)]);
-	return { hours, policy };
+	const [hours, policy, closed] = await Promise.all([getHours(db, ctx), getPolicy(db, ctx), listClosedDays(db, ctx)]);
+	return { hours, policy, closed };
 }
 
 const businessSchema = z.object({
@@ -50,6 +56,20 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 			}
 			await setHours(db, ctx, rows);
 			return { saved: "hours" as const, errors: {} };
+		}
+		if (intent === "closed-add") {
+			try {
+				const r = await addClosedDays(db, ctx, { from: String(form.get("from") ?? ""), to: String(form.get("to") ?? ""), label: String(form.get("label") ?? "") });
+				return { saved: "closed" as const, errors: {}, clashes: r.bookingsOnClosedDays };
+			} catch (err) {
+				const e = err as { status?: number; code?: string; message?: string };
+				if (e.status === 403) throw err;
+				return { saved: undefined, errors: { closed: e.code === "bad_range" ? e.message : "Pick a date." } };
+			}
+		}
+		if (intent === "closed-remove") {
+			await removeClosedDay(db, ctx, String(form.get("id")));
+			return { saved: "closed" as const, errors: {} };
 		}
 		if (intent === "policy") {
 			const parsed = policySchema.safeParse({
@@ -144,6 +164,43 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
 					{actionData?.saved === "hours" ? <p role="status" className="mt-2 text-sm font-semibold text-heading">Saved</p> : null}
 					{editable ? <Button type="submit" className="mt-3 self-start">Save hours</Button> : null}
 				</Form>
+			</Card>
+
+			<Card className="flex flex-col gap-3">
+				<h2 className="text-base font-bold">Closed days</h2>
+				<p className="text-sm text-ink-soft">Holidays and days off for the whole salon. Nobody can be booked on them.</p>
+				{loaderData.closed.length === 0 ? <p className="text-sm text-ink-soft">None coming up.</p> : (
+					<ul className="flex flex-col">
+						{loaderData.closed.map((c) => (
+							<li key={c.id} className="flex items-center justify-between gap-3 border-b border-hairline py-2 last:border-b-0">
+								<span className="flex min-w-0 flex-col">
+									<span className="text-sm font-semibold">{c.label || "Closed"}</span>
+									<span className="text-xs text-ink-soft">{fmtDay(c.from)}{c.to !== c.from ? ` to ${fmtDay(c.to)}` : ""}</span>
+								</span>
+								{editable ? (
+									<Form method="post">
+										<input type="hidden" name="intent" value="closed-remove" />
+										<input type="hidden" name="id" value={c.id} />
+										<Button type="submit" variant="quiet" size="sm">Remove</Button>
+									</Form>
+								) : null}
+							</li>
+						))}
+					</ul>
+				)}
+				{editable ? (
+					<Form method="post" className="flex flex-col gap-3 border-t border-hairline pt-3">
+						<input type="hidden" name="intent" value="closed-add" />
+						<div className="grid gap-3 sm:grid-cols-3">
+							<Field label="First day" name="from" type="date" required />
+							<Field label="Last day (optional)" name="to" type="date" />
+							<Field label="Label" name="label" placeholder="e.g. Thanksgiving" maxLength={60} />
+						</div>
+						{errors.closed ? <p role="alert" className="text-sm text-danger">{errors.closed}</p> : null}
+						{actionData?.saved === "closed" && "clashes" in actionData && actionData.clashes ? <p role="alert" className="text-sm text-danger">Saved. {actionData.clashes} {actionData.clashes === 1 ? "booking is" : "bookings are"} still on those days. Move or cancel {actionData.clashes === 1 ? "it" : "them"} from Calendar.</p> : actionData?.saved === "closed" ? <p role="status" className="text-sm font-semibold text-heading">Saved</p> : null}
+						<Button type="submit" variant="outlined" className="self-start">Add closed day</Button>
+					</Form>
+				) : null}
 			</Card>
 
 			<Card className="flex flex-col gap-4">

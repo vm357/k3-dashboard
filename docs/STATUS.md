@@ -196,6 +196,26 @@ Design: `K3 Dashboard.dc.html` (Clients tab, client sidebar). Migration `0007_cl
 - Tests: `tests/domain/client-info.test.ts` (derivation, filters, booking refusal, archive guard,
   Due for a visit, delete and erase, cross-business refusal).
 
+## Dashboard update 3: calendar views and closed days — done locally, staging pending
+
+Design: `K3 Dashboard.dc.html` (Bookings tab). No migration.
+
+- Calendar has Day, Week and Month views (`?view=week|month&date=`), prev/next by the view's unit,
+  and a date jump up to a year ahead. Week is seven day cards (stacked on phones); Month is a grid
+  with a booking count per day. Tapping a booking opens the appointment panel in any view; tapping
+  a day goes to its Day view.
+- Closed days: Settings → Closed days adds one or more whole days with a label ("Thanksgiving").
+  Stored as business-wide time blocks, so the availability engine already keeps them unbookable.
+  Saving warns when bookings already sit on those days. Weekly closing days come from opening hours.
+- Closed days and staff time off / breaks / blocks show in Day (as rows in the timeline), Week and
+  Month. Today says "Closed · <label>" and shows no open gaps. The booking sheet and the Move picker
+  cross out closed days.
+- `server/domain/calendar/service.ts`: `listRange` (up to 42 days), `closedDates`, `listClosedDays`,
+  `addClosedDays` (up to 31 days at a time), `removeClosedDay`.
+- Tests: `tests/domain/calendar.test.ts`.
+
+Not done: creating blocks from the calendar itself (still under Team → staff member).
+
 ## Known gaps and decisions deferred
 
 - Self-serve signup is disabled in production until phase 8; accounts come from invitations or admin onboarding.

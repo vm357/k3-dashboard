@@ -120,6 +120,12 @@ export function AppointmentPanel({ panel, base }: { panel: AppointmentPanelData;
 							<div className="grid grid-cols-7 gap-1.5">
 								{panel.move.days.map((d) => {
 									const on = d.iso === panel.move!.date;
+									if (d.closed) return (
+										<span key={d.iso} title={d.closed} className="flex flex-col items-center gap-0.5 rounded-card border border-dashed border-input-border bg-canvas-alt py-2 text-ink-soft">
+											<span className="text-[11px] font-semibold">{WD[d.weekday]}</span>
+											<span className="text-base font-bold line-through">{d.day}</span>
+										</span>
+									);
 									return (
 										<Link key={d.iso} to={to({ move: d.iso })} aria-pressed={on} className={`press flex flex-col items-center gap-0.5 rounded-card border py-2 ${on ? "border-feature bg-feature text-on-dark" : "border-input-border bg-card"}`}>
 											<span className={`text-[11px] font-semibold ${on ? "text-on-dark-soft" : "text-ink-soft"}`}>{WD[d.weekday]}</span>

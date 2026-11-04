@@ -3,6 +3,7 @@ import { hasPermission } from "../../server/auth/permissions";
 import type { Db } from "../../server/db/client";
 import { getAppointment, listMoveSlots } from "../../server/domain/appointments/service";
 import { listEmployees } from "../../server/domain/staff/service";
+import { closedDates } from "../../server/domain/calendar/service";
 import { addDays, formatLocalDate, localDateOf, weekdayOf } from "../../server/domain/scheduling/time";
 
 /**
@@ -33,7 +34,7 @@ export async function loadAppointmentPanel(db: Db, ctx: TenantCtx, url: URL) {
 	}
 
 	const moveParam = url.searchParams.get("move");
-	let move: { date: string; employeeId: string; starts: string[]; days: { iso: string; weekday: number; day: number }[] } | null = null;
+	let move: { date: string; employeeId: string; starts: string[]; days: { iso: string; weekday: number; day: number; closed: string | null }[] } | null = null;
 	if (moveParam !== null && appt.status === "confirmed") {
 		const date = moveParam || apptDay;
 		const employeeId = staff.find((e) => e.id === url.searchParams.get("with"))?.id ?? appt.employeeId;
@@ -43,7 +44,8 @@ export async function loadAppointmentPanel(db: Db, ctx: TenantCtx, url: URL) {
 		} catch {
 			starts = [];
 		}
-		const days = Array.from({ length: 14 }, (_, i) => addDays(today, i)).map((d) => ({ iso: formatLocalDate(d), weekday: weekdayOf(d), day: d.day }));
+		const closed = await closedDates(db, ctx, formatLocalDate(today), 14).catch(() => ({}) as Record<string, string>);
+		const days = Array.from({ length: 14 }, (_, i) => addDays(today, i)).map((d) => ({ iso: formatLocalDate(d), weekday: weekdayOf(d), day: d.day, closed: closed[formatLocalDate(d)] ?? null }));
 		move = { date, employeeId, starts, days };
 	}
 

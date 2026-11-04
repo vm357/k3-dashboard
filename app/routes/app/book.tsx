@@ -13,6 +13,7 @@ import { fullName, listCustomers } from "../../../server/domain/customers/servic
 import { addDays, formatLocalDate, localDateOf, parseLocalDate, weekdayOf } from "../../../server/domain/scheduling/time";
 import { listServices } from "../../../server/domain/services/service";
 import { getBusiness } from "../../../server/domain/businesses/service";
+import { closedDates } from "../../../server/domain/calendar/service";
 import { listEmployees } from "../../../server/domain/staff/service";
 
 export function meta(): Route.MetaDescriptors {
@@ -46,6 +47,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 
 	const today = localDateOf(new Date(), timeZone);
 	const days = Array.from({ length: 14 }, (_, i) => addDays(today, i));
+	const closed = await closedDates(db, ctx, formatLocalDate(today), 14).catch(() => ({}) as Record<string, string>);
 	const date = dateParam ? parseLocalDate(dateParam) : null;
 
 	let slots: { starts: Date[]; totalMinutes: number; priceCents: number; depositDueCents: number; timeZone: string } | null = null;
@@ -65,7 +67,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		staff,
 		employee,
 		svcIds,
-		days: days.map((d) => ({ iso: formatLocalDate(d), weekday: weekdayOf(d), day: d.day })),
+		days: days.map((d) => ({ iso: formatLocalDate(d), weekday: weekdayOf(d), day: d.day, closed: closed[formatLocalDate(d)] ?? null })),
 		date: date ? formatLocalDate(date) : null,
 		slots: slots ? { ...slots, starts: slots.starts.map((d) => d.toISOString()) } : null,
 		timeZone,
@@ -256,6 +258,12 @@ export default function Book({ loaderData, actionData }: Route.ComponentProps) {
 					<div className="grid grid-cols-7 gap-1.5">
 						{d.days.map((day) => {
 							const on = d.date === day.iso;
+							if (day.closed) return (
+								<span key={day.iso} title={day.closed} aria-label={`${WD[day.weekday]} ${day.day}, ${day.closed}`} className="flex w-full flex-col items-center gap-0.5 rounded-card border border-dashed border-input-border bg-canvas-alt py-2 text-ink-soft">
+									<span className="text-[11px] font-semibold">{WD[day.weekday]}</span>
+									<span className="text-base font-bold line-through">{day.day}</span>
+								</span>
+							);
 							return (
 								<Link key={day.iso} to={href({ date: day.iso })} aria-pressed={on} role="button" className={`press flex w-full flex-col items-center gap-0.5 rounded-card border py-2 ${on ? "border-feature bg-feature text-on-dark" : "border-input-border bg-card"}`}>
 									<span className={`text-[11px] font-semibold ${on ? "text-on-dark-soft" : "text-ink-soft"}`}>{WD[day.weekday]}</span>
