@@ -15,3 +15,9 @@ app/routes/auth/sign-in.tsx, server/domain/invitations/service.ts, app/routes/ap
 tests/helpers/server.ts, docs/STATUS.md.
 
 If you edited any changed file locally since you uploaded the repo, diff before overwriting.
+
+## Sender domain fix
+
+- `wrangler.jsonc`: staging and production send from `no-reply@mail.kermitwebcraft.com` (the domain verified in Resend). Resend returned 403 for the old `k3dashboard.app` address.
+- `server/env.ts`: same default.
+- `.github/workflows/deploy.yml`: pushes `RESEND_API_KEY` to the Worker on every deploy. Add it under GitHub → Settings → Environments → staging (and production).

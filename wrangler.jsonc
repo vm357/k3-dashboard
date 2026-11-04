@@ -33,12 +33,12 @@
 	"env": {
 		"staging": {
 			"name": "k3-dashboard-staging",
-			"vars": { "APP_ENV": "staging", "APP_ORIGIN": "https://staging-app.kermitwebcraft.com", "EMAIL_FROM_ADDRESS": "no-reply@kermitwebcraft.com" },
+			"vars": { "APP_ENV": "staging", "APP_ORIGIN": "https://staging-app.kermitwebcraft.com", "EMAIL_FROM_ADDRESS": "no-reply@mail.kermitwebcraft.com" },
 			"hyperdrive": [{ "binding": "HYPERDRIVE", "id": "3b1655f1de914e7cb868752be79249fb" }]
 		},
 		"production": {
 			"name": "k3-dashboard-production",
-			"vars": { "APP_ENV": "production", "APP_ORIGIN": "https://app.kermitwebcraft.com", "EMAIL_FROM_ADDRESS": "no-reply@kermitwebcraft.com" },
+			"vars": { "APP_ENV": "production", "APP_ORIGIN": "https://app.kermitwebcraft.com", "EMAIL_FROM_ADDRESS": "no-reply@mail.kermitwebcraft.com" },
 			"hyperdrive": [{ "binding": "HYPERDRIVE", "id": "28aad2c14c524dea95be092d33c619b1" }]
 		}
 	}

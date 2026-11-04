@@ -17,7 +17,7 @@ const EnvSchema = z.object({
 	STRIPE_PLATFORM_WEBHOOK_SECRET: z.string().optional(),
 	RESEND_API_KEY: z.string().optional(),
 	/** Verified sender address on the Resend domain. The display name is set per email. */
-	EMAIL_FROM_ADDRESS: z.email().default("no-reply@k3dashboard.app"),
+	EMAIL_FROM_ADDRESS: z.email().default("no-reply@mail.kermitwebcraft.com"),
 });
 
 export type AppEnv = z.infer<typeof EnvSchema> & {

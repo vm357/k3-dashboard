@@ -10,7 +10,8 @@ name: Deploy
 #   CLOUDFLARE_API_TOKEN     "Edit Cloudflare Workers" template token
 #   CLOUDFLARE_ACCOUNT_ID
 #   AUTH_SECRET              32+ random characters; pushed into the Worker on every deploy
-# Later phases add RESEND_API_KEY and STRIPE_* the same way (see the secrets step).
+#   RESEND_API_KEY           Resend key for the verified domain mail.kermitwebcraft.com
+# Later phases add STRIPE_* the same way (see the secrets step).
 
 on:
   push:
@@ -74,8 +75,10 @@ jobs:
         # Same redirected config as the deploy, so this lands on the Worker just deployed.
         run: |
           printf '%s' "$AUTH_SECRET" | npx wrangler secret put AUTH_SECRET
+          if [ -n "$RESEND_API_KEY" ]; then printf '%s' "$RESEND_API_KEY" | npx wrangler secret put RESEND_API_KEY; else echo "RESEND_API_KEY not set in this GitHub environment; emails will fail"; fi
         env:
           AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Smoke test the Worker on workers.dev
