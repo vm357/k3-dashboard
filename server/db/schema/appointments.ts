@@ -70,6 +70,8 @@ export const appointments = pgTable(
 		policyAcknowledgment: jsonb("policy_acknowledgment"),
 		holdExpiresAt: timestamp("hold_expires_at", { withTimezone: true }),
 		rescheduledFromId: uuid("rescheduled_from_id"),
+		/** Shared by every visit booked together as a repeat ("every 3 weeks"). */
+		seriesId: uuid("series_id"),
 		createdByUserId: uuid("created_by_user_id"),
 		reminderStatus: reminderStatus("reminder_status").notNull().default("not_sent"),
 		reminderSentAt: timestamp("reminder_sent_at", { withTimezone: true }),
@@ -80,6 +82,7 @@ export const appointments = pgTable(
 		index("appointments_business_day_idx").on(t.businessId, t.startAt),
 		index("appointments_employee_day_idx").on(t.businessId, t.employeeId, t.startAt),
 		index("appointments_customer_idx").on(t.businessId, t.customerId, t.startAt),
+		index("appointments_series_idx").on(t.businessId, t.seriesId),
 		tenantPolicy("appointments"),
 	],
 ).enableRLS();

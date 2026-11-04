@@ -5,10 +5,10 @@ import { Sheet } from "../../components/sheet";
 import { Avatar, Button, Field } from "../../components/ui";
 import { IconCheck } from "../../components/icons";
 import { AllergyFlag, ClientTag } from "../../components/client-tags";
-import { formatCents, formatMinutes, formatPhone, formatTime } from "../../lib/format";
+import { formatCents, formatDate, formatMinutes, formatPhone, formatTime } from "../../lib/format";
 import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
-import { bookAppointment, listSlots } from "../../../server/domain/appointments/service";
+import { bookAppointment, bookSeries, listSlots, previewSeries } from "../../../server/domain/appointments/service";
 import { fullName, listCustomers } from "../../../server/domain/customers/service";
 import { addDays, formatLocalDate, localDateOf, parseLocalDate, weekdayOf } from "../../../server/domain/scheduling/time";
 import { listServices } from "../../../server/domain/services/service";
@@ -60,7 +60,26 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 			slots = null;
 		}
 	}
+	// Repeat: ?repeat=2|3|4 (weeks) &n=visits; with &at= the sheet previews every date before booking.
+	const repeatParam = Number(url.searchParams.get("repeat"));
+	const repeat = [2, 3, 4].includes(repeatParam) ? repeatParam : 0;
+	const count = [4, 6, 8, 12].includes(Number(url.searchParams.get("n"))) ? Number(url.searchParams.get("n")) : 6;
+	const at = url.searchParams.get("at");
+	let series: { startAt: string; date: string; status: string; label: string | null }[] | null = null;
+	if (repeat && at && employee && svcIds.length > 0) {
+		try {
+			series = (await previewSeries(db, ctx, { employeeId: employee.id, serviceIds: svcIds, startAt: new Date(at), everyWeeks: repeat, count })).map((o) => ({ ...o, startAt: o.startAt.toISOString() }));
+		} catch {
+			series = null;
+		}
+	}
+	const carry = { newFirstName: url.searchParams.get("newFirstName") ?? "", newLastName: url.searchParams.get("newLastName") ?? "", newPhone: url.searchParams.get("newPhone") ?? "", note: url.searchParams.get("note") ?? "" };
 	return {
+		repeat,
+		count,
+		at: series ? at : null,
+		series,
+		carry,
 		q,
 		client,
 		newClient,
@@ -84,7 +103,23 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 	const newCustomer = form.get("newFirstName")
 		? { firstName: String(form.get("newFirstName")), lastName: String(form.get("newLastName") ?? ""), phone: String(form.get("newPhone") ?? ""), email: String(form.get("newEmail") ?? "") }
 		: undefined;
+	const repeat = Number(form.get("repeat") ?? 0);
 	try {
+		if (repeat) {
+			const r = await bookSeries(db, ctx, {
+				employeeId: String(form.get("employeeId")),
+				serviceIds: form.getAll("svc").map(String),
+				startAt: String(form.get("at")),
+				customerId: form.get("client") ? String(form.get("client")) : undefined,
+				newCustomer,
+				note: String(form.get("note") ?? ""),
+				everyWeeks: repeat,
+				count: Number(form.get("n") ?? 6),
+			});
+			const wl = form.get("waitlist");
+			if (wl) await markWaitlistBooked(db, ctx, String(wl), r.first.id).catch(() => false);
+			throw redirect(`/app/${params.business}/appointments/${r.first.id}?booked=${r.booked.length}`);
+		}
 		const appt = await bookAppointment(db, ctx, {
 			employeeId: String(form.get("employeeId")),
 			serviceIds: form.getAll("svc").map(String),
@@ -119,7 +154,7 @@ export default function Book({ loaderData, actionData }: Route.ComponentProps) {
 	const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 	// Every tap is a link whose query string carries the whole state; no hydration needed.
-	const href = (patch: { client?: string | null; new?: boolean; q?: string | null; svc?: string[]; date?: string | null; employee?: string | null }) => {
+	const href = (patch: { client?: string | null; new?: boolean; q?: string | null; svc?: string[]; date?: string | null; employee?: string | null; repeat?: number; n?: number }) => {
 		const sp = new URLSearchParams();
 		const client = patch.client === undefined ? d.client?.id ?? null : patch.client;
 		const isNew = patch.new === undefined ? d.newClient : patch.new;
@@ -134,6 +169,11 @@ export default function Book({ loaderData, actionData }: Route.ComponentProps) {
 		if (date) sp.set("date", date);
 		if (employee) sp.set("employee", employee);
 		if (d.waitlist) sp.set("waitlist", d.waitlist);
+		const repeat = patch.repeat ?? d.repeat;
+		if (repeat) {
+			sp.set("repeat", String(repeat));
+			sp.set("n", String(patch.n ?? d.count));
+		}
 		return { pathname: `${base}/book`, search: `?${sp.toString()}` };
 	};
 	const hidden = () => (
@@ -297,9 +337,35 @@ export default function Book({ loaderData, actionData }: Route.ComponentProps) {
 							<input type="hidden" name="employeeId" value={d.employee?.id ?? ""} />
 							{d.client ? <input type="hidden" name="client" value={d.client.id} /> : null}
 							{d.svcIds.map((id) => <input key={id} type="hidden" name="svc" value={id} />)}
+							{d.repeat ? (
+								<>
+									{/* A repeat previews first: the time buttons submit as GET with everything needed to redraw the sheet. */}
+									{d.newClient ? <input type="hidden" name="new" value="1" /> : null}
+									{d.date ? <input type="hidden" name="date" value={d.date} /> : null}
+									{d.employee ? <input type="hidden" name="employee" value={d.employee.id} /> : null}
+									<input type="hidden" name="repeat" value={d.repeat} />
+									<input type="hidden" name="n" value={d.count} />
+								</>
+							) : null}
+							<div className="flex flex-col gap-2 rounded-card bg-card p-3 shadow-card">
+								<div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Repeat">
+									<span className="mr-1 text-sm font-semibold">Repeat</span>
+									{[0, 2, 3, 4].map((w) => (
+										<Link key={w} to={href({ repeat: w })} aria-pressed={d.repeat === w} className={`press inline-flex min-h-9 items-center rounded-pill border px-3 text-sm font-semibold ${d.repeat === w ? "border-feature bg-feature text-on-dark" : "border-input-border bg-card"}`}>{w === 0 ? "No" : `Every ${w} wks`}</Link>
+									))}
+								</div>
+								{d.repeat ? (
+									<div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Number of visits">
+										<span className="mr-1 text-sm font-semibold">Visits</span>
+										{[4, 6, 8, 12].map((n) => (
+											<Link key={n} to={href({ n })} aria-pressed={d.count === n} className={`press inline-flex min-h-9 min-w-11 items-center justify-center rounded-pill border px-3 text-sm font-semibold ${d.count === n ? "border-feature bg-feature text-on-dark" : "border-input-border bg-card"}`}>{n}</Link>
+										))}
+									</div>
+								) : null}
+							</div>
 							<div className="grid grid-cols-4 gap-2">
 								{d.slots.starts.map((iso) => (
-									<button key={iso} type="submit" name="at" value={iso} disabled={busy} className="press min-h-11 rounded-pill border border-input-border bg-card text-sm font-semibold hover:border-cta">
+									<button key={iso} type="submit" name="at" value={iso} formMethod={d.repeat ? "get" : undefined} disabled={busy} aria-pressed={d.at === iso || undefined} className={`press min-h-11 rounded-pill border text-sm font-semibold hover:border-cta ${d.at === iso ? "border-cta bg-cta text-on-dark" : "border-input-border bg-card"}`}>
 										{formatTime(iso, tz)}
 									</button>
 								))}
@@ -308,16 +374,53 @@ export default function Book({ loaderData, actionData }: Route.ComponentProps) {
 								<fieldset className="flex flex-col gap-3 rounded-card bg-card p-3 shadow-card">
 									<legend className="sr-only">New client details</legend>
 									<div className="grid grid-cols-2 gap-3">
-										<Field label="First name" name="newFirstName" defaultValue={d.q} required />
-										<Field label="Last name" name="newLastName" />
+										<Field label="First name" name="newFirstName" defaultValue={d.carry.newFirstName || d.q} required />
+										<Field label="Last name" name="newLastName" defaultValue={d.carry.newLastName} />
 									</div>
-									<Field label="Phone" name="newPhone" type="tel" inputMode="tel" />
+									<Field label="Phone" name="newPhone" type="tel" inputMode="tel" defaultValue={d.carry.newPhone} />
 								</fieldset>
 							) : null}
-							<Field label="Note for this visit (optional)" name="note" />
-							<p className="text-xs text-ink-soft">Tapping a time books it.</p>
+							<Field label={d.repeat ? "Note for these visits (optional)" : "Note for this visit (optional)"} name="note" defaultValue={d.carry.note} />
+							<p className="text-xs text-ink-soft">{d.repeat ? "Tap a time to see every date before booking." : "Tapping a time books it."}</p>
 						</Form>
 					)}
+					{d.series && d.at ? (
+						<Form method="post" aria-label="Repeat dates" className="flex flex-col gap-3 rounded-card bg-card p-3 shadow-card">
+							<div className="flex items-baseline justify-between">
+								<h3 className="text-sm font-bold">Every {d.repeat} weeks · {formatTime(d.at, tz)}</h3>
+								<span className="text-xs text-ink-soft">{d.series.filter((o) => o.status === "ok").length} of {d.series.length} free</span>
+							</div>
+							<ol className="flex flex-col">
+								{d.series.map((o) => (
+									<li key={o.startAt} className="flex items-center justify-between gap-3 border-b border-hairline py-2 text-sm last:border-b-0">
+										<span className={o.status === "ok" ? "font-semibold" : "text-ink-soft line-through"}>{formatDate(o.startAt, tz, "full")}</span>
+										{o.status === "ok" ? <IconCheck width={18} height={18} className="text-cta" /> : <span className={`text-xs font-semibold ${o.status === "taken" ? "text-danger" : "text-ink-soft"}`}>{o.label}</span>}
+									</li>
+								))}
+							</ol>
+							{d.waitlist ? <input type="hidden" name="waitlist" value={d.waitlist} /> : null}
+							<input type="hidden" name="employeeId" value={d.employee?.id ?? ""} />
+							{d.client ? <input type="hidden" name="client" value={d.client.id} /> : null}
+							{d.svcIds.map((id) => <input key={id} type="hidden" name="svc" value={id} />)}
+							<input type="hidden" name="at" value={d.at} />
+							<input type="hidden" name="repeat" value={d.repeat} />
+							<input type="hidden" name="n" value={d.count} />
+							<input type="hidden" name="note" value={d.carry.note} />
+							{d.newClient ? (
+								<>
+									<input type="hidden" name="newFirstName" value={d.carry.newFirstName} />
+									<input type="hidden" name="newLastName" value={d.carry.newLastName} />
+									<input type="hidden" name="newPhone" value={d.carry.newPhone} />
+								</>
+							) : null}
+							{d.series[0]?.status !== "ok" ? (
+								<p className="text-sm text-danger">The first date is not free. Pick another time.</p>
+							) : (
+								<Button type="submit" disabled={busy} className="self-start">Book {d.series.filter((o) => o.status === "ok").length} visits</Button>
+							)}
+							{d.series.some((o) => o.status !== "ok") ? <p className="text-xs text-ink-soft">Crossed-out dates are skipped. Book them separately if you want a different time.</p> : null}
+						</Form>
+					) : null}
 				</section>
 			) : null}
 			{chosenServices.length > 0 && !d.date ? <p className="text-xs text-ink-soft">{chosenServices.map((s) => s.name).join(" + ")}</p> : null}

@@ -238,6 +238,21 @@ Design: `K3 Dashboard.dc.html` (Today, appointment sidebar, Settings). Migration
 Not done (Twilio step): reading Y/N replies from clients (Twilio webhook with signature check) and
 sending reminders automatically the day before (cron). Both need the approved Twilio number.
 
+## Dashboard update 5: repeat bookings — done locally, staging pending
+
+Design: `K3 Dashboard.dc.html` (booking sheet, appointment sidebar). Migration `0009_appointment_series`.
+
+- Booking sheet: Repeat (No, every 2, 3 or 4 weeks) and number of visits (4, 6, 8, 12). With a repeat
+  set, tapping a time shows every date first; closed days (weekly or from Settings), the staff
+  member's day off and taken slots are crossed out with the reason. "Book N visits" books the free
+  ones. Same local time on every date, through daylight saving.
+- `previewSeries`, `bookSeries` (first date must be free; later conflicts, including a race, are
+  skipped and reported), `listSeries`, `cancelSeriesFrom`. Visits share `series_id`; a moved visit
+  keeps it. A new client entered in the sheet is created once.
+- Appointment panel: "Repeat booking · 2 of 6" with every date in the series (cancelled ones crossed
+  out), and the cancel confirmation can also cancel the later visits.
+- Tests: `tests/domain/repeat-bookings.test.ts`.
+
 ## Known gaps and decisions deferred
 
 - Self-serve signup is disabled in production until phase 8; accounts come from invitations or admin onboarding.

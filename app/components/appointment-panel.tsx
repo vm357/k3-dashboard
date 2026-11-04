@@ -67,7 +67,7 @@ export function AppointmentPanel({ panel, base }: { panel: AppointmentPanelData;
 
 				<div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 pb-6">
 					<AllergyNotice allergy={a.allergy} />
-					{panel.booked ? <p role="status" className="rounded-card bg-mint px-4 py-3 text-sm font-semibold text-heading">Booked.</p> : null}
+					{panel.booked ? <p role="status" className="rounded-card bg-mint px-4 py-3 text-sm font-semibold text-heading">{panel.booked > 1 ? `Booked ${panel.booked} visits.` : "Booked."}</p> : null}
 					{panel.err ? <p role="alert" className="rounded-card bg-card px-4 py-3 text-sm text-danger shadow-card">{panel.err === "taken" ? "That time is not available any more. Pick another." : panel.err === "sms" ? "The text did not go out. Try again, or send it from your phone." : "That did not work. Try again."}</p> : null}
 
 					{primary || canNoShow || canMove || canCancel ? (
@@ -96,6 +96,12 @@ export function AppointmentPanel({ panel, base }: { panel: AppointmentPanelData;
 							<input type="hidden" name="returnTo" value={here} />
 							<p className="text-base font-bold">Cancel this appointment?</p>
 							<Field label="Reason (optional)" name="reason" />
+							{panel.series && panel.series.laterBooked > 0 ? (
+								<label className="flex min-h-11 items-center gap-3 text-sm">
+									<input type="checkbox" name="series" value="rest" className="h-5 w-5 accent-[#c82014]" />
+									Also cancel the {panel.series.laterBooked} later {panel.series.laterBooked === 1 ? "visit" : "visits"} in this repeat
+								</label>
+							) : null}
 							<div className="flex flex-wrap justify-end gap-2">
 								<Link to={to({ cancel: null })} className="press inline-flex min-h-10 items-center rounded-pill border border-heading px-4 text-sm font-semibold text-heading">Keep it</Link>
 								<button type="submit" name="intent" value="cancelled" disabled={busy} className="press inline-flex min-h-10 items-center rounded-pill bg-danger px-4 text-sm font-semibold text-on-dark disabled:opacity-50">Cancel appointment</button>
@@ -146,6 +152,25 @@ export function AppointmentPanel({ panel, base }: { panel: AppointmentPanelData;
 									))}
 								</Form>
 							)}
+						</section>
+					) : null}
+
+					{panel.series ? (
+						<section aria-label="Repeat booking" className="flex flex-col gap-1.5 rounded-card bg-card p-4 shadow-card">
+							<div className="flex items-baseline justify-between">
+								<h3 className="text-base font-bold">Repeat booking</h3>
+								<span className="text-xs text-ink-soft">{panel.series.position} of {panel.series.items.length}</span>
+							</div>
+							<ol className="flex flex-col">
+								{panel.series.items.map((s) => (
+									<li key={s.id}>
+										<Link to={to({ a: s.id, move: null, cancel: null, remind: null })} aria-current={s.id === a.id || undefined} className={`flex items-center justify-between gap-3 border-b border-hairline py-2 text-sm last:border-b-0 ${s.id === a.id ? "font-bold text-heading" : ""}`}>
+											<span className={s.status === "cancelled" ? "text-ink-soft line-through" : ""}>{formatDate(s.startAt, tz, "full")} · {formatTime(s.startAt, tz)}</span>
+											{s.status !== "confirmed" ? <span className="text-xs text-ink-soft">{STATUS_LABEL[s.status]}</span> : null}
+										</Link>
+									</li>
+								))}
+							</ol>
 						</section>
 					) : null}
 

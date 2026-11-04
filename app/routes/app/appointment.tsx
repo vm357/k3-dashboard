@@ -1,7 +1,7 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/appointment";
 import { requireTenant, services } from "../../../server/auth/session";
-import { getAppointment, reschedule, transition, updateReminder, type AppointmentStatus } from "../../../server/domain/appointments/service";
+import { cancelSeriesFrom, getAppointment, reschedule, transition, updateReminder, type AppointmentStatus } from "../../../server/domain/appointments/service";
 import { sendReminder } from "../../../server/domain/reminders/service";
 import { envContext } from "../../../server/context";
 import { formatLocalDate, localDateOf } from "../../../server/domain/scheduling/time";
@@ -19,7 +19,8 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const base = `/app/${params.business}`;
 	const day = formatLocalDate(localDateOf(appt.startAt, appt.timeZone));
 	const today = formatLocalDate(localDateOf(new Date(), appt.timeZone));
-	const booked = new URL(request.url).searchParams.get("booked") === "1" ? "&booked=1" : "";
+	const n = Number(new URL(request.url).searchParams.get("booked"));
+	const booked = n > 0 ? `&booked=${Math.min(n, 12)}` : "";
 	throw redirect(day === today ? `${base}?a=${appt.id}${booked}` : `${base}/calendar?date=${day}&a=${appt.id}${booked}`);
 }
 
@@ -58,6 +59,10 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 		}
 		if (intent === "remind-sent" || intent === "remind-confirmed" || intent === "remind-declined") {
 			await updateReminder(db, ctx, id, intent.slice(7) as "sent" | "confirmed" | "declined");
+			return redirect(backTo(returnTo, base, { a: id }));
+		}
+		if (intent === "cancelled" && form.get("series") === "rest") {
+			await cancelSeriesFrom(db, ctx, id, String(form.get("reason") ?? ""));
 			return redirect(backTo(returnTo, base, { a: id }));
 		}
 		await transition(db, ctx, id, intent as AppointmentStatus, String(form.get("reason") ?? ""));

@@ -50,6 +50,7 @@ export const bookingInput = z.object({
 	customerId: z.uuid().optional(),
 	newCustomer: z.object({ firstName: z.string().trim().min(1), lastName: z.string().trim().optional().or(z.literal("")), phone: z.string().trim().optional().or(z.literal("")), email: z.string().trim().optional().or(z.literal("")) }).optional(),
 	note: z.string().trim().max(500).optional().or(z.literal("")),
+	seriesId: z.uuid().optional(),
 });
 export type BookingInput = z.input<typeof bookingInput>;
 
@@ -178,6 +179,7 @@ export async function bookAppointment(db: Db, ctx: TenantCtx, raw: BookingInput)
 					priceCents: svc.priceCents,
 					depositDueCents: svc.depositDueCents,
 					note: input.note || null,
+					seriesId: input.seriesId ?? null,
 					createdByUserId: ctx.userId,
 				})
 				.returning();
@@ -269,6 +271,7 @@ export async function reschedule(db: Db, ctx: TenantCtx, id: string, startAt: Da
 					refundedCents: old.refundedCents,
 					note: old.note,
 					rescheduledFromId: old.id,
+					seriesId: old.seriesId,
 					createdByUserId: ctx.userId,
 				})
 				.returning();
@@ -299,6 +302,107 @@ export async function updateReminder(db: Db, ctx: TenantCtx, id: string, to: "se
 		await recordAudit(tx, { businessId: ctx.businessId, actorUserId: ctx.userId, action: `appointment.reminder_${to}`, targetTable: "appointments", targetId: id });
 		return after;
 	});
+}
+
+export type SeriesStatus = "ok" | "closed" | "off" | "taken";
+
+/**
+ * Dates for a repeat booking at the same local time every `everyWeeks` weeks. Each one is checked
+ * like a single booking: closed days (weekly or from Settings), the staff member's day off, and
+ * anything already in the slot.
+ */
+export async function previewSeries(db: Db, ctx: TenantCtx, args: { employeeId: string; serviceIds: string[]; startAt: Date; everyWeeks: number; count: number }) {
+	require(ctx, "calendar.view_own");
+	const every = z.number().int().min(1).max(8).parse(args.everyWeeks);
+	const count = z.number().int().min(2).max(12).parse(args.count);
+	return withTenant(db, ctx, async (tx) => {
+		const tz = await tzOf(tx, ctx);
+		const svc = await resolveServices(tx, ctx, args.employeeId, args.serviceIds);
+		const hhmm = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: tz }).format(args.startAt);
+		const first = localDateOf(args.startAt, tz);
+		const out: { startAt: Date; date: string; status: SeriesStatus; label: string | null }[] = [];
+		for (let k = 0; k < count; k++) {
+			const date = addDays(first, 7 * every * k);
+			const startAt = zonedTimeToUtc(date, hhmm, tz);
+			const day = await loadDayContext(tx, ctx, args.employeeId, date);
+			const wd = new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
+			const hours = day.businessHours.find((h) => h.weekday === wd);
+			let status: SeriesStatus = "ok";
+			let label: string | null = null;
+			if (!fits({ ...day, date, totalMinutes: svc.totalMinutes }, startAt)) {
+				const closure = hours
+					? (await tx.select({ reason: timeBlocks.reason }).from(timeBlocks).where(and(eq(timeBlocks.businessId, ctx.businessId), sql`${timeBlocks.employeeId} is null`, lte(timeBlocks.startAt, zonedTimeToUtc(date, hours.startsAt, tz)), gte(timeBlocks.endAt, zonedTimeToUtc(date, hours.endsAt, tz)))).limit(1))[0]
+					: null;
+				if (!hours || closure) {
+					status = "closed";
+					label = closure?.reason || "Closed";
+				} else if (!day.employeeAvailability.some((a) => a.weekday === wd)) {
+					status = "off";
+					label = "Day off";
+				} else {
+					status = "taken";
+					label = "Time taken";
+				}
+			}
+			out.push({ startAt, date: formatLocalDate(date), status, label });
+		}
+		return out;
+	});
+}
+
+/**
+ * Book the first visit (must fit) and every later one that fits, all sharing a series id.
+ * Dates that are closed or taken are skipped and reported, never forced.
+ */
+export async function bookSeries(db: Db, ctx: TenantCtx, raw: BookingInput & { everyWeeks: number; count: number }) {
+	const input = bookingInput.parse(raw);
+	const plan = await previewSeries(db, ctx, { employeeId: input.employeeId, serviceIds: input.serviceIds, startAt: input.startAt, everyWeeks: raw.everyWeeks, count: raw.count });
+	if (plan[0].status !== "ok") throw new DomainError("slot_unavailable", "That time is no longer available");
+	const seriesId = crypto.randomUUID();
+	const first = await bookAppointment(db, ctx, { ...raw, seriesId });
+	const booked = [first];
+	const skipped: typeof plan = [];
+	for (const occ of plan.slice(1)) {
+		if (occ.status !== "ok") {
+			skipped.push(occ);
+			continue;
+		}
+		try {
+			booked.push(await bookAppointment(db, ctx, { ...raw, customerId: first.customerId, newCustomer: undefined, startAt: occ.startAt, seriesId }));
+		} catch (err) {
+			const code = (err as { code?: string }).code;
+			if (code !== "slot_taken" && code !== "slot_unavailable") throw err;
+			skipped.push({ ...occ, status: "taken", label: "Time taken" });
+		}
+	}
+	return { first, booked, skipped, seriesId };
+}
+
+/** Every visit in a series the caller can see, in date order (moved visits show at their new time). */
+export async function listSeries(db: Db, ctx: TenantCtx, seriesId: string) {
+	require(ctx, "calendar.view_own");
+	return withTenant(db, ctx, async (tx) => {
+		const visible = await visibleEmployeeIds(tx, ctx);
+		if (visible.length === 0) return [];
+		return tx
+			.select({ id: appointments.id, startAt: appointments.startAt, status: appointments.status })
+			.from(appointments)
+			.where(and(eq(appointments.businessId, ctx.businessId), eq(appointments.seriesId, seriesId), inArray(appointments.employeeId, visible), ne(appointments.status, "rescheduled"), ne(appointments.status, "expired")))
+			.orderBy(asc(appointments.startAt));
+	});
+}
+
+/** Cancel this visit and every later booked one in its series. Returns how many were cancelled. */
+export async function cancelSeriesFrom(db: Db, ctx: TenantCtx, id: string, reason?: string) {
+	const appt = await getAppointment(db, ctx, id);
+	if (!appt) throw new DomainError("appointment_not_found");
+	if (!appt.seriesId) {
+		await transition(db, ctx, id, "cancelled", reason);
+		return 1;
+	}
+	const rest = (await listSeries(db, ctx, appt.seriesId)).filter((a) => a.startAt.getTime() >= appt.startAt.getTime() && (a.status === "confirmed" || a.status === "held"));
+	for (const a of rest) await transition(db, ctx, a.id, "cancelled", reason);
+	return rest.length;
 }
 
 export interface DayAppointment {

@@ -1,7 +1,7 @@
 import type { TenantCtx } from "../../server/auth/ctx";
 import { hasPermission } from "../../server/auth/permissions";
 import type { Db } from "../../server/db/client";
-import { getAppointment, listMoveSlots } from "../../server/domain/appointments/service";
+import { getAppointment, listMoveSlots, listSeries } from "../../server/domain/appointments/service";
 import { listEmployees } from "../../server/domain/staff/service";
 import { closedDates } from "../../server/domain/calendar/service";
 import { reminderPreview } from "../../server/domain/reminders/service";
@@ -54,15 +54,21 @@ export async function loadAppointmentPanel(db: Db, ctx: TenantCtx, url: URL, opt
 	const remindable = appt.status === "confirmed" && new Date(appt.startAt).getTime() > now.getTime();
 	const preview = remindable && url.searchParams.get("remind") === "1" ? await reminderPreview(db, ctx, appt.id) : null;
 
+	const seriesRows = appt.seriesId ? await listSeries(db, ctx, appt.seriesId) : [];
+	const series = seriesRows.length > 1
+		? { items: seriesRows, position: seriesRows.findIndex((s) => s.id === appt.id) + 1, laterBooked: seriesRows.filter((s) => s.startAt.getTime() > new Date(appt.startAt).getTime() && s.status === "confirmed").length }
+		: null;
+
 	return {
 		appt,
+		series,
 		reminder: remindable ? { status: appt.reminderStatus, sentAt: appt.reminderSentAt, repliedAt: appt.reminderRepliedAt, preview: preview ? { body: preview.body, to: preview.to } : null, smsReady: !!opts.smsReady } : null,
 		isToday: apptDay === formatLocalDate(today),
 		staff,
 		move,
 		cancel: url.searchParams.get("cancel") === "1" && appt.allowedTransitions.includes("cancelled"),
 		err: url.searchParams.get("err"),
-		booked: url.searchParams.get("booked") === "1",
+		booked: Math.max(0, Math.min(12, Number(url.searchParams.get("booked")) || 0)),
 	};
 }
 

@@ -1,35 +1,26 @@
-# Dashboard update 4: waitlist and reminders
+# Dashboard update 5: repeat bookings
 
-Push updates 1, 2 and 3 first. This folder builds on them (some files here replace their versions).
+Push updates 1 to 4 first. This folder builds on them (some files here replace their versions).
 
 Copy everything in this folder over the root of your k3-dashboard repo (same paths), then:
 
     npm test
     npm run typecheck
 
-and push to main. The deploy runs migration 0008_waitlist_reminders on staging. It adds a
-waitlist table and three reminder columns; existing bookings start as "not sent".
-
-Twilio is not needed yet. Until it is set up, "Send reminder" opens your phone's Messages app
-with the text filled in, and you tap "I sent it".
+and push to main. The deploy runs migration 0009_appointment_series (one new column, nullable).
 
 New
-- drizzle/0008_waitlist_reminders.sql, drizzle/meta/0008_snapshot.json
-- server/sms/send.ts
-- server/domain/reminders/service.ts, server/domain/reminders/text.ts
-- server/domain/waitlist/service.ts
-- app/routes/app/waitlist-new.tsx
-- tests/domain/waitlist-reminders.test.ts
+- drizzle/0009_appointment_series.sql, drizzle/meta/0009_snapshot.json
+- tests/domain/repeat-bookings.test.ts
 
 Changed
 - drizzle/meta/_journal.json
-- server/db/schema/appointments.ts, server/env.ts
-- server/domain/appointments/service.ts, server/domain/businesses/hours.ts
-- app/routes.ts
-- app/routes/app/appointment.tsx, today.tsx, calendar.tsx, settings.tsx, book.tsx
+- server/db/schema/appointments.ts
+- server/domain/appointments/service.ts
+- app/routes/app/book.tsx, appointment.tsx
 - app/lib/appointment-panel.server.ts, app/components/appointment-panel.tsx
 - docs/STATUS.md (replaces yours)
 
-Check on staging: edit the reminder text in Settings; open tomorrow's booking from "Not confirmed
-yet", send the reminder from your phone and tap "I sent it", then Mark confirmed; add someone to the
-waitlist and book them from it.
+Check on staging: book a client every 3 weeks for 6 visits over Thanksgiving and see that date
+crossed out; open one of the visits and look at the series list; cancel from the middle with
+"Also cancel the later visits" ticked.

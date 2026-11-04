@@ -64,6 +64,13 @@
       "when": 1793846400000,
       "tag": "0008_waitlist_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793932800000,
+      "tag": "0009_appointment_series",
+      "breakpoints": true
     }
   ]
 }
