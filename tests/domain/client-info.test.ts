@@ -120,14 +120,14 @@ describe("client info: status, allergy, archive", () => {
 		await expect(deleteCustomer(db, owner, withVisits.id)).rejects.toMatchObject({ code: "not_archived" });
 		await archiveCustomer(db, owner, withVisits.id, at("08:00", 13));
 		await expect(deleteCustomer(db, staff, withVisits.id)).rejects.toBeInstanceOf(ForbiddenError);
-		expect(await deleteCustomer(db, owner, withVisits.id)).toEqual({ mode: "erased" });
+		expect(await deleteCustomer(db, owner, withVisits.id)).toEqual({ mode: "erased", photoKeys: [] });
 		const erased = (await getCustomer(db, owner, withVisits.id))!;
 		expect([erased.firstName, erased.lastName, erased.phone, erased.allergy, erased.notes.length]).toEqual(["Deleted", "client", null, null, 0]);
 		expect((await getAppointment(db, owner, appt.id))!.customerName).toBe("Deleted client");
 
 		const none = await createCustomer(db, owner, { firstName: "Gus" });
 		await archiveCustomer(db, owner, none.id);
-		expect(await deleteCustomer(db, owner, none.id)).toEqual({ mode: "deleted" });
+		expect(await deleteCustomer(db, owner, none.id)).toEqual({ mode: "deleted", photoKeys: [] });
 		expect(await getCustomer(db, owner, none.id)).toBeNull();
 	});
 

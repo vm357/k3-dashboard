@@ -59,7 +59,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		canSeeClients ? listCustomers(db, ctx, { limit: 1 }) : [],
 		hasPermission(ctx.role, p, "calendar.view_own") ? listDay(db, ctx, iso) : null,
 		canSeeClients ? dueForVisit(db, ctx, now, 3) : [],
-		loadAppointmentPanel(db, ctx, new URL(request.url), { smsReady: smsConfigured(context.get(envContext)) }),
+		loadAppointmentPanel(db, ctx, new URL(request.url), { smsReady: smsConfigured(context.get(envContext)), photosReady: !!context.get(envContext).PHOTOS }),
 		closedDates(db, ctx, iso, 1),
 		canCal ? listWaitlist(db, ctx) : [],
 		canCal ? listNotConfirmed(db, ctx, now) : [],

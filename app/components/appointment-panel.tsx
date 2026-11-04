@@ -3,6 +3,7 @@ import type { AppointmentPanelData } from "../lib/appointment-panel.server";
 import { IconCancel, IconClose, IconMove, IconNoShow } from "./icons";
 import { Avatar, Badge, Field } from "./ui";
 import { AllergyNotice, ClientTag } from "./client-tags";
+import { VisitPhotos } from "./visit-photos";
 import { STATUS_LABEL, formatCents, formatDate, formatMinutes, formatPhone, formatTime, formatTimeRange } from "../lib/format";
 
 const PANEL_KEYS = ["a", "move", "with", "cancel", "remind", "pay", "err", "booked"];
@@ -190,6 +191,14 @@ export function AppointmentPanel({ panel, base }: { panel: AppointmentPanelData;
 									))}
 								</Form>
 							)}
+						</section>
+					) : null}
+
+					{panel.photos && (panel.photos.ids.length > 0 || panel.photos.canAdd) ? (
+						<section aria-label="Nail photos" className="flex flex-col gap-2 rounded-card bg-card p-4 shadow-card">
+							<h3 className="text-base font-bold">Photos</h3>
+							{panel.err === "photo" ? <p role="alert" className="text-sm text-danger">That photo did not save. Use a JPEG, PNG, WebP or HEIC up to 10 MB.</p> : null}
+							<VisitPhotos base={base} appointmentId={a.id} ids={panel.photos.ids} canAdd={panel.photos.canAdd} canDelete={panel.photos.canDelete} action={actionUrl} returnTo={here} label={`${a.customerName}'s visit`} />
 						</section>
 					) : null}
 

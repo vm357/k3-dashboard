@@ -272,6 +272,26 @@ Design: `K3 Dashboard.dc.html` (appointment sidebar checkout, client credit). Mi
 
 Not done: refunds and voiding a payment (comes with Stripe), revenue in Reports from recorded payments.
 
+## Dashboard update 7: usual service and nail photos — done locally, staging pending
+
+Design: `K3 Dashboard.dc.html` (client sidebar, History). Migration `0011_visit_photos`.
+
+- Usual service: stored in `customers.preferences.usualServiceIds` (no new column). Set on the profile
+  ("Set usual service", or "Use last visit's"). Picking a client in the booking sheet fills in their
+  usual services, or the last completed visit's when none is set; hidden services are left out. The
+  sheet says where they came from, and once a service is tapped it never refills (`&own=1`). Repeats
+  use the same services.
+- Nail photos: up to six per visit (checked in or done), JPEG, PNG, WebP or HEIC up to 10 MB. Added from
+  the client's History and from the appointment panel; thumbnails open full size. Files live in R2
+  (`PHOTOS` binding) under `<business>/<client>/<photo>`; `visit_photos` rows are the index and the
+  access check, and `/app/:business/photos/:id` streams a file only after membership and row-level
+  checks (`cache-control: private`). Deleting needs customers.edit. Erasing a client deletes their
+  photos and files.
+- Tests: `tests/domain/usual-photos.test.ts` (in-memory bucket).
+
+Setup needed: R2 buckets `k3-photos-staging` and `k3-photos-production` must exist before this deploys,
+or the deploy fails. HEIC shows in Safari only; other browsers show a broken thumbnail.
+
 ## Known gaps and decisions deferred
 
 - Self-serve signup is disabled in production until phase 8; accounts come from invitations or admin onboarding.

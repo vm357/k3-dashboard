@@ -4,6 +4,7 @@ import { requireTenant, services } from "../../../server/auth/session";
 import { cancelSeriesFrom, getAppointment, reschedule, transition, updateReminder, type AppointmentStatus } from "../../../server/domain/appointments/service";
 import { sendReminder } from "../../../server/domain/reminders/service";
 import { checkout } from "../../../server/domain/payments/service";
+import { addVisitPhoto, deletePhoto } from "../../../server/domain/photos/service";
 import { envContext } from "../../../server/context";
 import { formatLocalDate, localDateOf } from "../../../server/domain/scheduling/time";
 
@@ -60,6 +61,22 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 		}
 		if (intent === "remind-sent" || intent === "remind-confirmed" || intent === "remind-declined") {
 			await updateReminder(db, ctx, id, intent.slice(7) as "sent" | "confirmed" | "declined");
+			return redirect(backTo(returnTo, base, { a: id }));
+		}
+		if (intent === "photo" || intent === "photo-delete") {
+			const bucket = context.get(envContext).PHOTOS;
+			try {
+				if (intent === "photo") {
+					const file = form.get("photo");
+					if (!(file instanceof File) || file.size === 0) throw Object.assign(new Error("no file"), { code: "photo_missing" });
+					await addVisitPhoto(db, ctx, bucket, id, file);
+				} else {
+					await deletePhoto(db, ctx, bucket, String(form.get("photoId")));
+				}
+			} catch (err) {
+				if ((err as { status?: number }).status === 403) throw err;
+				return redirect(backTo(returnTo, base, { a: id, err: "photo" }));
+			}
 			return redirect(backTo(returnTo, base, { a: id }));
 		}
 		if (intent === "checkout") {

@@ -6,6 +6,7 @@ import { listEmployees } from "../../server/domain/staff/service";
 import { closedDates } from "../../server/domain/calendar/service";
 import { reminderPreview } from "../../server/domain/reminders/service";
 import { getCredit, listPayments } from "../../server/domain/payments/service";
+import { listPhotos } from "../../server/domain/photos/service";
 import { addDays, formatLocalDate, localDateOf, weekdayOf } from "../../server/domain/scheduling/time";
 
 /**
@@ -21,7 +22,7 @@ import { addDays, formatLocalDate, localDateOf, weekdayOf } from "../../server/d
  */
 export const PANEL_PARAMS = ["a", "move", "with", "cancel", "remind", "pay", "err", "booked"] as const;
 
-export async function loadAppointmentPanel(db: Db, ctx: TenantCtx, url: URL, opts: { smsReady?: boolean } = {}) {
+export async function loadAppointmentPanel(db: Db, ctx: TenantCtx, url: URL, opts: { smsReady?: boolean; photosReady?: boolean } = {}) {
 	const id = url.searchParams.get("a");
 	if (!id) return null;
 	const appt = await getAppointment(db, ctx, id);
@@ -63,15 +64,18 @@ export async function loadAppointmentPanel(db: Db, ctx: TenantCtx, url: URL, opt
 
 	const dueCents = Math.max(0, appt.priceCents - appt.paidCents);
 	const canPay = (appt.status === "completed" || appt.status === "checked_in") && dueCents > 0;
-	const [paid, credit] = await Promise.all([
+	const visited = appt.status === "completed" || appt.status === "checked_in";
+	const [paid, credit, photoMap] = await Promise.all([
 		listPayments(db, ctx, appt.id),
 		hasPermission(ctx.role, [...ctx.permissions], "customers.view") ? getCredit(db, ctx, appt.customerId).then((c) => c.balanceCents) : Promise.resolve(0),
+		visited ? listPhotos(db, ctx, [appt.id]) : Promise.resolve({} as Record<string, string[]>),
 	]);
 
 	return {
 		appt,
 		payment: { dueCents, canPay, open: canPay && url.searchParams.get("pay") === "1", creditCents: credit, items: paid },
 		series,
+		photos: visited ? { ids: photoMap[appt.id] ?? [], canAdd: !!opts.photosReady && hasPermission(ctx.role, [...ctx.permissions], "appointments.manage_own"), canDelete: hasPermission(ctx.role, [...ctx.permissions], "customers.edit") } : null,
 		reminder: remindable ? { status: appt.reminderStatus, sentAt: appt.reminderSentAt, repliedAt: appt.reminderRepliedAt, preview: preview ? { body: preview.body, to: preview.to } : null, smsReady: !!opts.smsReady } : null,
 		isToday: apptDay === formatLocalDate(today),
 		staff,

@@ -27,6 +27,8 @@ const EnvSchema = z.object({
 export type AppEnv = z.infer<typeof EnvSchema> & {
 	/** Hyperdrive binding, present in staging and production. */
 	HYPERDRIVE?: { connectionString: string };
+	/** R2 bucket for nail photos (wrangler.jsonc, r2_buckets). */
+	PHOTOS?: import("./photos/store").PhotoBucket;
 };
 
 let cached: AppEnv | undefined;
@@ -39,11 +41,11 @@ export function readEnv(raw: unknown): AppEnv {
 		const missing = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
 		throw new Error(`Invalid environment configuration: ${missing}`);
 	}
-	const r = raw as { HYPERDRIVE?: { connectionString: string } };
+	const r = raw as { HYPERDRIVE?: { connectionString: string }; PHOTOS?: AppEnv["PHOTOS"] };
 	if (!parsed.data.DATABASE_URL && !r.HYPERDRIVE?.connectionString) {
 		throw new Error("Invalid environment configuration: DATABASE_URL or HYPERDRIVE is required");
 	}
-	cached = { ...parsed.data, HYPERDRIVE: r.HYPERDRIVE };
+	cached = { ...parsed.data, HYPERDRIVE: r.HYPERDRIVE, PHOTOS: r.PHOTOS };
 	return cached;
 }
 

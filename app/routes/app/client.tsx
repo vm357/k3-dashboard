@@ -8,7 +8,11 @@ import { Avatar, Badge, Button, Card, Field, PageTitle } from "../../components/
 import { AllergyNotice, ClientTag, STATUS_OPTIONS } from "../../components/client-tags";
 import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
-import { addCustomerNote, archiveCustomer, customerInput, deleteCustomer, fullName, getCustomer, restoreCustomer, setCustomerStatus, updateCustomer } from "../../../server/domain/customers/service";
+import { addCustomerNote, archiveCustomer, customerInput, deleteCustomer, fullName, getCustomer, restoreCustomer, setCustomerStatus, setUsualServices, suggestedServiceIds, updateCustomer, usualServiceIds } from "../../../server/domain/customers/service";
+import { addVisitPhoto, deletePhoto, listPhotos } from "../../../server/domain/photos/service";
+import { listServices } from "../../../server/domain/services/service";
+import { envContext } from "../../../server/context";
+import { VisitPhotos } from "../../components/visit-photos";
 import { STATUS_LABEL, formatCents, formatDate, formatPhone, formatTime } from "../../lib/format";
 import { listForCustomer } from "../../../server/domain/appointments/service";
 import { addCredit, getCredit } from "../../../server/domain/payments/service";
@@ -23,10 +27,17 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	if (!hasPermission(ctx.role, [...ctx.permissions], "customers.view")) throw new Response("Forbidden", { status: 403 });
 	const client = await getCustomer(db, ctx, params.customerId!);
 	if (!client) throw new Response("Not found", { status: 404 });
-	const [visits, credit] = await Promise.all([listForCustomer(db, ctx, client.id), getCredit(db, ctx, client.id)]);
+	const p = [...ctx.permissions];
+	const [visits, credit, catalog, suggested] = await Promise.all([
+		listForCustomer(db, ctx, client.id),
+		getCredit(db, ctx, client.id),
+		hasPermission(ctx.role, p, "services.view") ? listServices(db, ctx).then((r) => r.services.filter((s) => (s as { active?: boolean }).active !== false).map((s) => ({ id: s.id, name: s.name }))) : Promise.resolve([] as { id: string; name: string }[]),
+		suggestedServiceIds(db, ctx, client.id),
+	]);
+	const photos = await listPhotos(db, ctx, visits.past.map((v) => v.id));
 	const ser = (r: (typeof visits.upcoming)[number]) => ({ ...r, startAt: r.startAt.toISOString() });
 	const sp = new URL(request.url).searchParams;
-	return { client, visits: { upcoming: visits.upcoming.map(ser), past: visits.past.map(ser), lifetimeCents: visits.lifetimeCents }, askArchive: sp.get("archive") === "1", askDelete: sp.get("delete") === "1" && ctx.role === "owner", credit };
+	return { client, visits: { upcoming: visits.upcoming.map(ser), past: visits.past.map(ser), lifetimeCents: visits.lifetimeCents }, askArchive: sp.get("archive") === "1", askDelete: sp.get("delete") === "1" && ctx.role === "owner", credit, catalog, usual: usualServiceIds(client.preferences), suggested, photos, photosReady: !!context.get(envContext).PHOTOS };
 }
 
 export async function action({ request, params, context }: Route.ActionArgs) {
@@ -40,6 +51,27 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 			return { errors: {}, saved: "note" as const };
 		}
 		const here = `/app/${params.business}/clients/${params.customerId}`;
+		if (intent === "usual") {
+			await setUsualServices(db, ctx, params.customerId!, form.getAll("svc").map(String));
+			return { errors: {}, saved: "usual" as const };
+		}
+		if (intent === "photo" || intent === "photo-delete") {
+			const bucket = context.get(envContext).PHOTOS;
+			try {
+				if (intent === "photo") {
+					const file = form.get("photo");
+					if (!(file instanceof File) || file.size === 0) return { errors: { photo: "Pick a photo." }, saved: undefined };
+					await addVisitPhoto(db, ctx, bucket, String(form.get("appointmentId")), file);
+				} else {
+					await deletePhoto(db, ctx, bucket, String(form.get("photoId")));
+				}
+			} catch (err) {
+				const e = err as { status?: number; code?: string; message?: string };
+				if (e.status === 403) throw err;
+				return { errors: { photo: e.code?.startsWith("photo") ? e.message : "The photo did not save. Try again." }, saved: undefined };
+			}
+			return { errors: {}, saved: "photo" as const };
+		}
 		if (intent === "credit-add" || intent === "credit-remove") {
 			const cents = Math.round(Number(String(form.get("amount") ?? "").replace(/[^\d.]/g, "") || 0) * 100);
 			if (!cents) return { errors: { credit: "Enter an amount." }, saved: undefined };
@@ -66,6 +98,8 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 		}
 		if (intent === "delete") {
 			const r = await deleteCustomer(db, ctx, params.customerId!);
+			const bucket = context.get(envContext).PHOTOS;
+			if (bucket) await Promise.all(r.photoKeys.map((k) => bucket.delete(k).catch(() => {})));
 			throw redirect(r.mode === "deleted" ? `/app/${params.business}/clients?status=archived` : here);
 		}
 		const parsed = customerInput.safeParse({
@@ -105,6 +139,9 @@ export default function Client({ loaderData, actionData }: Route.ComponentProps)
 	const archived = !!c.archivedAt;
 	const noBook = archived || c.status === "do_not_book";
 	const isOwner = data.ctx.role === "owner";
+	const canManage = hasPermission(data.ctx.role, data.ctx.permissions, "appointments.manage_own");
+	const usualNames = loaderData.usual.map((id) => loaderData.catalog.find((s) => s.id === id)?.name).filter(Boolean);
+	const lastNames = loaderData.suggested.source === "last" ? loaderData.suggested.ids.map((id) => loaderData.catalog.find((s) => s.id === id)?.name).filter(Boolean) : [];
 
 	return (
 		<Page>
@@ -188,6 +225,41 @@ export default function Client({ loaderData, actionData }: Route.ComponentProps)
 				</Card>
 			)}
 
+			{loaderData.catalog.length > 0 ? (
+				<Card className="flex flex-col gap-2">
+					<div className="flex items-baseline justify-between">
+						<h2 className="text-base font-bold">Usual service</h2>
+						{actionData?.saved === "usual" ? <span className="text-xs font-semibold text-heading">Saved</span> : null}
+					</div>
+					<p className="text-sm">{usualNames.length ? usualNames.join(" + ") : <span className="text-ink-soft">Not set.{lastNames.length ? ` Last visit: ${lastNames.join(" + ")}.` : ""}</span>}</p>
+					<p className="text-xs text-ink-soft">Fills in the services when you book {c.firstName}, including repeats.</p>
+					{canEdit && !archived ? (
+						<details>
+							<summary className="cursor-pointer text-sm font-semibold text-cta">{usualNames.length ? "Change" : "Set usual service"}</summary>
+							<Form method="post" className="mt-2 flex flex-col gap-2">
+								<input type="hidden" name="intent" value="usual" />
+								<div className="flex flex-wrap gap-1.5">
+									{loaderData.catalog.map((s) => (
+										<label key={s.id} className="press inline-flex min-h-10 cursor-pointer items-center rounded-pill border border-input-border bg-card px-3.5 text-sm font-semibold has-[:checked]:border-cta has-[:checked]:bg-cta has-[:checked]:text-on-dark">
+											<input type="checkbox" name="svc" value={s.id} defaultChecked={loaderData.usual.includes(s.id)} className="sr-only" />
+											{s.name}
+										</label>
+									))}
+								</div>
+								<Button type="submit" size="sm" variant="outlined" className="self-start">Save</Button>
+							</Form>
+						</details>
+					) : null}
+					{canEdit && !archived && !usualNames.length && lastNames.length ? (
+						<Form method="post">
+							<input type="hidden" name="intent" value="usual" />
+							{loaderData.suggested.ids.map((id) => <input key={id} type="hidden" name="svc" value={id} />)}
+							<Button type="submit" size="sm" variant="quiet" className="px-0">Use last visit's</Button>
+						</Form>
+					) : null}
+				</Card>
+			) : null}
+
 			<Card className="flex flex-col gap-3">
 				<div className="flex items-baseline justify-between">
 					<h2 className="text-base font-bold">Credit</h2>
@@ -256,19 +328,27 @@ export default function Client({ loaderData, actionData }: Route.ComponentProps)
 				{loaderData.visits.past.length === 0 ? (
 					<p className="px-0.5 text-sm text-ink-soft">No visits yet.</p>
 				) : (
-					<ol className="flex flex-col overflow-hidden rounded-card bg-card shadow-card">
-						{loaderData.visits.past.map((v) => (
-							<li key={v.id}>
-								<Link to={`${base}/appointments/${v.id}`} className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3 last:border-b-0">
-									<span className="flex min-w-0 flex-col gap-0.5">
-										<span className="text-sm font-semibold">{formatDate(v.startAt, tz)}</span>
-										<span className="truncate text-xs text-ink-soft">{v.services.join(" + ")}{v.status !== "completed" ? ` · ${STATUS_LABEL[v.status]}` : ""}</span>
-									</span>
-									<span className="text-sm font-semibold">{formatCents(v.priceCents)}</span>
-								</Link>
-							</li>
-						))}
-					</ol>
+					<>
+						{errors.photo ? <p role="alert" className="px-0.5 text-sm text-danger">{errors.photo}</p> : null}
+						<ol className="flex flex-col overflow-hidden rounded-card bg-card shadow-card">
+							{loaderData.visits.past.map((v) => {
+								const ids = loaderData.photos[v.id] ?? [];
+								const visited = v.status === "completed" || v.status === "checked_in";
+								return (
+									<li key={v.id} className="flex flex-col gap-2 border-b border-hairline px-4 py-3 last:border-b-0">
+										<Link to={`${base}/appointments/${v.id}`} className="flex items-center justify-between gap-3">
+											<span className="flex min-w-0 flex-col gap-0.5">
+												<span className="text-sm font-semibold">{formatDate(v.startAt, tz)}</span>
+												<span className="truncate text-xs text-ink-soft">{v.services.join(" + ")}{v.status !== "completed" ? ` · ${STATUS_LABEL[v.status]}` : ""}</span>
+											</span>
+											<span className="text-sm font-semibold">{formatCents(v.priceCents)}</span>
+										</Link>
+										{visited ? <VisitPhotos base={base} appointmentId={v.id} ids={ids} canAdd={canManage && loaderData.photosReady && !archived} canDelete={canEdit} label={`Visit on ${formatDate(v.startAt, tz)}`} /> : null}
+									</li>
+								);
+							})}
+						</ol>
+					</>
 				)}
 			</section>
 

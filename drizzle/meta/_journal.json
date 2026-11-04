@@ -78,6 +78,13 @@
       "when": 1794019200000,
       "tag": "0010_checkout_credit",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794105600000,
+      "tag": "0011_visit_photos",
+      "breakpoints": true
     }
   ]
 }

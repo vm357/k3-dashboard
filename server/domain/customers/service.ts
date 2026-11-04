@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, isNull, or, sql } f
 import { z } from "zod";
 import { can, require, requireOwner, type TenantCtx } from "../../auth/ctx";
 import type { Db } from "../../db/client";
-import { appointments, customerNotes, customers } from "../../db/schema";
+import { appointmentServices, appointments, customerNotes, customers, services, visitPhotos } from "../../db/schema";
 import { withTenant } from "../../db/tenant";
 import { recordAudit } from "../audit/service";
 import { DomainError } from "../members/service";
@@ -221,7 +221,7 @@ export async function restoreCustomer(db: Db, ctx: TenantCtx, id: string) {
  * visits, the person is erased (name, contact, notes, allergy) and the visits stay for
  * the books under "Deleted client".
  */
-export async function deleteCustomer(db: Db, ctx: TenantCtx, id: string): Promise<{ mode: "deleted" | "erased" }> {
+export async function deleteCustomer(db: Db, ctx: TenantCtx, id: string): Promise<{ mode: "deleted" | "erased"; photoKeys: string[] }> {
 	requireOwner(ctx);
 	return withTenant(db, ctx, async (tx) => {
 		const [c] = await tx.select({ id: customers.id, archivedAt: customers.archivedAt }).from(customers).where(and(eq(customers.id, id), eq(customers.businessId, ctx.businessId)));
@@ -229,6 +229,8 @@ export async function deleteCustomer(db: Db, ctx: TenantCtx, id: string): Promis
 		if (!c.archivedAt) throw new DomainError("not_archived", "Archive the client first");
 		const [visit] = await tx.select({ id: appointments.id }).from(appointments).where(and(eq(appointments.businessId, ctx.businessId), eq(appointments.customerId, id))).limit(1);
 		await tx.delete(customerNotes).where(and(eq(customerNotes.businessId, ctx.businessId), eq(customerNotes.customerId, id)));
+		// Photos are of the person; they go with the name. The caller removes the files from storage.
+		const photos = await tx.delete(visitPhotos).where(and(eq(visitPhotos.businessId, ctx.businessId), eq(visitPhotos.customerId, id))).returning({ key: visitPhotos.r2Key });
 		if (visit) {
 			await tx
 				.update(customers)
@@ -238,7 +240,51 @@ export async function deleteCustomer(db: Db, ctx: TenantCtx, id: string): Promis
 			await tx.delete(customers).where(eq(customers.id, id));
 		}
 		await recordAudit(tx, { businessId: ctx.businessId, actorUserId: ctx.userId, action: visit ? "customer.erase" : "customer.delete", targetTable: "customers", targetId: id });
-		return { mode: visit ? "erased" : "deleted" };
+		return { mode: visit ? "erased" : "deleted", photoKeys: photos.map((p) => p.key) };
+	});
+}
+
+/** The services a client usually has, kept in `preferences.usualServiceIds`; fills in the booking sheet. */
+export function usualServiceIds(preferences: unknown): string[] {
+	const v = (preferences as { usualServiceIds?: unknown } | null)?.usualServiceIds;
+	return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+export async function setUsualServices(db: Db, ctx: TenantCtx, id: string, raw: string[]) {
+	require(ctx, "customers.edit");
+	const ids = z.array(z.uuid()).max(10).parse([...new Set(raw)]);
+	return withTenant(db, ctx, async (tx) => {
+		const [c] = await tx.select({ preferences: customers.preferences }).from(customers).where(and(eq(customers.id, id), eq(customers.businessId, ctx.businessId)));
+		if (!c) throw new DomainError("customer_not_found");
+		if (ids.length) {
+			const owned = await tx.select({ id: services.id }).from(services).where(and(eq(services.businessId, ctx.businessId), inArray(services.id, ids)));
+			if (owned.length !== ids.length) throw new DomainError("service_not_found");
+		}
+		await tx.update(customers).set({ preferences: { ...(c.preferences ?? {}), usualServiceIds: ids }, updatedAt: new Date() }).where(eq(customers.id, id));
+		await recordAudit(tx, { businessId: ctx.businessId, actorUserId: ctx.userId, action: "customer.usual_services", targetTable: "customers", targetId: id, after: { serviceIds: ids } });
+		return ids;
+	});
+}
+
+/** Usual services if set, else what they had at their last completed visit. Active services only. */
+export async function suggestedServiceIds(db: Db, ctx: TenantCtx, id: string): Promise<{ ids: string[]; source: "usual" | "last" | null }> {
+	require(ctx, "customers.view");
+	return withTenant(db, ctx, async (tx) => {
+		const [c] = await tx.select({ preferences: customers.preferences }).from(customers).where(and(eq(customers.id, id), eq(customers.businessId, ctx.businessId)));
+		if (!c) return { ids: [], source: null };
+		const active = async (ids: string[]) => (ids.length ? (await tx.select({ id: services.id }).from(services).where(and(eq(services.businessId, ctx.businessId), eq(services.active, true), inArray(services.id, ids)))).map((r) => r.id) : []);
+		const keepOrder = (ids: string[], ok: string[]) => ids.filter((x) => ok.includes(x));
+		const usual = usualServiceIds(c.preferences);
+		if (usual.length) {
+			const ok = keepOrder(usual, await active(usual));
+			if (ok.length) return { ids: ok, source: "usual" };
+		}
+		const [last] = await tx.select({ id: appointments.id }).from(appointments).where(and(eq(appointments.businessId, ctx.businessId), eq(appointments.customerId, id), eq(appointments.status, "completed"))).orderBy(desc(appointments.startAt)).limit(1);
+		if (!last) return { ids: [], source: null };
+		const rows = await tx.select({ serviceId: appointmentServices.serviceId }).from(appointmentServices).where(eq(appointmentServices.appointmentId, last.id)).orderBy(asc(appointmentServices.sortOrder));
+		const ids = rows.map((r) => r.serviceId);
+		const ok = keepOrder(ids, await active(ids));
+		return { ids: ok, source: ok.length ? "last" : null };
 	});
 }
 

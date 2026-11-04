@@ -9,7 +9,7 @@ import { formatCents, formatDate, formatMinutes, formatPhone, formatTime } from 
 import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
 import { bookAppointment, bookSeries, listSlots, previewSeries } from "../../../server/domain/appointments/service";
-import { fullName, listCustomers } from "../../../server/domain/customers/service";
+import { fullName, listCustomers, suggestedServiceIds } from "../../../server/domain/customers/service";
 import { addDays, formatLocalDate, localDateOf, parseLocalDate, weekdayOf } from "../../../server/domain/scheduling/time";
 import { listServices } from "../../../server/domain/services/service";
 import { getBusiness } from "../../../server/domain/businesses/service";
@@ -35,7 +35,10 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const q = url.searchParams.get("q") ?? "";
 	const clientId = url.searchParams.get("client");
 	const newClient = url.searchParams.get("new") === "1";
-	const svcIds = url.searchParams.getAll("svc");
+	let svcIds = url.searchParams.getAll("svc");
+	// Picking a client fills in their usual services (or last visit's) once; after any tap on a
+	// service the sheet carries &own=1 and never refills, so clearing them all sticks.
+	const own = url.searchParams.get("own") === "1";
 	const dateParam = url.searchParams.get("date");
 	const employeeParam = url.searchParams.get("employee");
 	const waitlist = url.searchParams.get("waitlist");
@@ -44,6 +47,12 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const timeZone = business?.timeZone ?? "America/New_York";
 
 	const client = clientId ? (await listCustomers(db, ctx, { limit: 200 })).find((c) => c.id === clientId) ?? null : null;
+	let filledFrom: "usual" | "last" | null = null;
+	if (client && svcIds.length === 0 && !own) {
+		const s = await suggestedServiceIds(db, ctx, client.id).catch(() => ({ ids: [] as string[], source: null }));
+		svcIds = s.ids;
+		filledFrom = s.source;
+	}
 	const matches = !client && !newClient && q.length >= 1 ? await listCustomers(db, ctx, { query: q, limit: 8 }) : [];
 	const employee = staff.find((e) => e.id === employeeParam) ?? staff[0] ?? null;
 
@@ -75,6 +84,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	}
 	const carry = { newFirstName: url.searchParams.get("newFirstName") ?? "", newLastName: url.searchParams.get("newLastName") ?? "", newPhone: url.searchParams.get("newPhone") ?? "", note: url.searchParams.get("note") ?? "" };
 	return {
+		filledFrom,
 		repeat,
 		count,
 		at: series ? at : null,
@@ -160,6 +170,8 @@ export default function Book({ loaderData, actionData }: Route.ComponentProps) {
 		const isNew = patch.new === undefined ? d.newClient : patch.new;
 		const q = patch.q === undefined ? null : patch.q;
 		const svc = patch.svc ?? d.svcIds;
+		const clientChanging = patch.client !== undefined && patch.client !== (d.client?.id ?? null);
+		if (!clientChanging && (patch.svc !== undefined || d.svcIds.length > 0)) sp.set("own", "1");
 		const date = patch.date === undefined ? d.date : patch.date;
 		const employee = patch.employee === undefined ? d.employee?.id ?? null : patch.employee;
 		if (client) sp.set("client", client);
@@ -181,6 +193,7 @@ export default function Book({ loaderData, actionData }: Route.ComponentProps) {
 			{d.client ? <input type="hidden" name="client" value={d.client.id} /> : null}
 			{d.newClient ? <input type="hidden" name="new" value="1" /> : null}
 			{d.svcIds.map((id) => <input key={id} type="hidden" name="svc" value={id} />)}
+			<input type="hidden" name="own" value="1" />
 			{d.date ? <input type="hidden" name="date" value={d.date} /> : null}
 			{d.employee ? <input type="hidden" name="employee" value={d.employee.id} /> : null}
 			{d.waitlist ? <input type="hidden" name="waitlist" value={d.waitlist} /> : null}
@@ -271,7 +284,7 @@ export default function Book({ loaderData, actionData }: Route.ComponentProps) {
 				<section className="mb-5 flex flex-col gap-2">
 					<div className="flex items-baseline justify-between">
 						<h2 className="text-sm font-bold">Services</h2>
-						<span className="text-xs text-ink-soft">tap to add or remove</span>
+						<span className="text-xs text-ink-soft">{d.filledFrom === "usual" ? "their usual · tap to change" : d.filledFrom === "last" ? "same as last visit · tap to change" : "tap to add or remove"}</span>
 					</div>
 					<div className="flex flex-wrap gap-2">
 						{d.services.map((s) => {

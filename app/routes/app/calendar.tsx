@@ -64,7 +64,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const [day, range, panel, waitlist] = await Promise.all([
 		view === "day" ? listDay(db, ctx, iso) : null,
 		listRange(db, ctx, formatLocalDate(rangeStart), length),
-		loadAppointmentPanel(db, ctx, url, { smsReady: smsConfigured(context.get(envContext)) }),
+		loadAppointmentPanel(db, ctx, url, { smsReady: smsConfigured(context.get(envContext)), photosReady: !!context.get(envContext).PHOTOS }),
 		view === "day" ? listWaitlist(db, ctx, { date: iso }) : [],
 	]);
 	return {
