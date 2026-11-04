@@ -5,7 +5,7 @@ import { Avatar, Badge, Field } from "./ui";
 import { AllergyNotice, ClientTag } from "./client-tags";
 import { STATUS_LABEL, formatCents, formatDate, formatMinutes, formatPhone, formatTime, formatTimeRange } from "../lib/format";
 
-const PANEL_KEYS = ["a", "move", "with", "cancel", "remind", "err", "booked"];
+const PANEL_KEYS = ["a", "move", "with", "cancel", "remind", "pay", "err", "booked"];
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /**
@@ -39,6 +39,7 @@ export function AppointmentPanel({ panel, base }: { panel: AppointmentPanelData;
 
 	const booked = a.status === "confirmed";
 	const primary = a.status === "checked_in" ? { intent: "completed", label: "Mark done" } : booked && panel.isToday ? { intent: "checked_in", label: "Check in" } : null;
+	const showPay = panel.payment.canPay && !panel.payment.open && (a.status === "completed" || !primary);
 	const canNoShow = a.allowedTransitions.includes("no_show") && (panel.isToday || a.status === "checked_in");
 	const canMove = booked;
 	const canCancel = a.allowedTransitions.includes("cancelled") && !panel.cancel;
@@ -70,8 +71,11 @@ export function AppointmentPanel({ panel, base }: { panel: AppointmentPanelData;
 					{panel.booked ? <p role="status" className="rounded-card bg-mint px-4 py-3 text-sm font-semibold text-heading">{panel.booked > 1 ? `Booked ${panel.booked} visits.` : "Booked."}</p> : null}
 					{panel.err ? <p role="alert" className="rounded-card bg-card px-4 py-3 text-sm text-danger shadow-card">{panel.err === "taken" ? "That time is not available any more. Pick another." : panel.err === "sms" ? "The text did not go out. Try again, or send it from your phone." : "That did not work. Try again."}</p> : null}
 
-					{primary || canNoShow || canMove || canCancel ? (
+					{primary || canNoShow || canMove || canCancel || showPay ? (
 						<div className="flex flex-col gap-2 rounded-card bg-card p-3 shadow-card">
+							{showPay ? (
+								<Link to={to({ pay: "1", move: null, cancel: null, remind: null })} className="press flex min-h-12 w-full items-center justify-center rounded-pill bg-cta text-base font-semibold text-on-dark">Take payment · {formatCents(panel.payment.dueCents)}</Link>
+							) : null}
 							{primary ? (
 								<Form method="post" action={actionUrl}>
 									<input type="hidden" name="returnTo" value={here} />
@@ -89,6 +93,40 @@ export function AppointmentPanel({ panel, base }: { panel: AppointmentPanelData;
 								{canCancel ? <Link to={to({ cancel: "1", move: null, with: null })} className={`${pill} bg-[#fbeceb] text-danger`}><IconCancel width={16} height={16} />Cancel</Link> : null}
 							</div>
 						</div>
+					) : null}
+
+					{panel.payment.open ? (
+						<Form method="post" action={actionUrl} aria-label="Take payment" className="flex flex-col gap-3 rounded-card bg-card p-4 shadow-card">
+							<input type="hidden" name="returnTo" value={here} />
+							<input type="hidden" name="intent" value="checkout" />
+							<div className="flex items-baseline justify-between">
+								<h3 className="text-base font-bold">Take payment</h3>
+								<span className="text-base font-bold">{formatCents(panel.payment.dueCents)}</span>
+							</div>
+							{panel.payment.creditCents > 0 ? (
+								<label className="flex min-h-11 items-center gap-3 rounded-card bg-mint px-3 text-sm">
+									<input type="checkbox" name="useCredit" defaultChecked className="h-5 w-5 accent-[#00754a]" />
+									<span>Use credit · <span className="font-bold">{formatCents(Math.min(panel.payment.creditCents, panel.payment.dueCents))}</span> of {formatCents(panel.payment.creditCents)}</span>
+								</label>
+							) : null}
+							<fieldset className="flex flex-col gap-1.5">
+								<legend className="mb-1.5 text-sm font-semibold">Paid by</legend>
+								<div className="grid grid-cols-2 gap-2">
+									{(["card", "cash"] as const).map((m, i) => (
+										<label key={m} className="press flex min-h-12 cursor-pointer items-center justify-center rounded-pill border border-input-border bg-card text-base font-semibold has-[:checked]:border-feature has-[:checked]:bg-feature has-[:checked]:text-on-dark">
+											<input type="radio" name="method" value={m} defaultChecked={i === 0} className="sr-only" />
+											{m === "card" ? "Card" : "Cash"}
+										</label>
+									))}
+								</div>
+							</fieldset>
+							<Field label="Tip (optional)" name="tip" type="number" inputMode="decimal" min={0} step="0.01" placeholder="0.00" />
+							<div className="flex flex-wrap justify-end gap-2">
+								<Link to={to({ pay: null })} className="press inline-flex min-h-10 items-center rounded-pill border border-heading px-4 text-sm font-semibold text-heading">Not now</Link>
+								<button type="submit" disabled={busy} className="press inline-flex min-h-10 items-center rounded-pill bg-cta px-5 text-sm font-semibold text-on-dark disabled:opacity-50">Record payment</button>
+							</div>
+							<p className="text-xs text-ink-soft">Take the card on your own machine, then record it here.</p>
+						</Form>
 					) : null}
 
 					{panel.cancel ? (
@@ -251,9 +289,19 @@ export function AppointmentPanel({ panel, base }: { panel: AppointmentPanelData;
 							))}
 							<li className="flex items-center justify-between pt-2 text-sm font-bold"><span>Total</span><span>{formatCents(a.priceCents)}</span></li>
 						</ul>
+						{panel.payment.items.length > 0 ? (
+							<ul className="flex flex-col gap-1 border-t border-hairline pt-2">
+								{panel.payment.items.map((p) => (
+									<li key={p.id} className="flex items-center justify-between text-sm">
+										<span>{p.method === "credit" ? "Credit" : p.method === "card" ? "Card" : "Cash"}{p.tipCents ? <span className="text-ink-soft"> · tip {formatCents(p.tipCents)}</span> : null}<span className="text-xs text-ink-soft"> · {formatTime(p.createdAt, tz)}{p.byName ? ` · ${p.byName}` : ""}</span></span>
+										<span className="font-semibold">{formatCents(p.amountCents + p.tipCents)}</span>
+									</li>
+								))}
+							</ul>
+						) : null}
 						<div className="flex items-center justify-between text-sm">
 							<span className="text-ink-soft">Payment</span>
-							<Badge>{a.paymentStatus === "unpaid" ? "Not paid" : (STATUS_LABEL[a.paymentStatus] ?? a.paymentStatus)}</Badge>
+							<Badge variant={a.paymentStatus === "paid_in_full" ? "green" : "neutral"}>{a.paymentStatus === "unpaid" ? "Not paid" : a.paymentStatus === "paid_in_full" ? "Paid" : a.paymentStatus === "deposit_paid" ? "Deposit paid" : a.paymentStatus === "refunded" ? "Refunded" : "Part refunded"}</Badge>
 						</div>
 						{a.depositDueCents > 0 ? <p className="text-xs text-ink-soft">{formatCents(a.depositDueCents)} deposit due.</p> : null}
 						{a.note ? <p className="text-sm"><span className="font-semibold">Note:</span> {a.note}</p> : null}

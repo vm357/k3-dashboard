@@ -3,6 +3,7 @@ import type { Route } from "./+types/appointment";
 import { requireTenant, services } from "../../../server/auth/session";
 import { cancelSeriesFrom, getAppointment, reschedule, transition, updateReminder, type AppointmentStatus } from "../../../server/domain/appointments/service";
 import { sendReminder } from "../../../server/domain/reminders/service";
+import { checkout } from "../../../server/domain/payments/service";
 import { envContext } from "../../../server/context";
 import { formatLocalDate, localDateOf } from "../../../server/domain/scheduling/time";
 
@@ -28,7 +29,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 function backTo(raw: string, base: string, patch: Record<string, string | null>) {
 	const ok = raw === base || raw.startsWith(`${base}/`) || raw.startsWith(`${base}?`);
 	const u = new URL(ok ? raw : base, "http://x");
-	for (const k of ["move", "with", "cancel", "remind", "err", "booked"]) u.searchParams.delete(k);
+	for (const k of ["move", "with", "cancel", "remind", "pay", "err", "booked"]) u.searchParams.delete(k);
 	for (const [k, v] of Object.entries(patch)) (v === null ? u.searchParams.delete(k) : u.searchParams.set(k, v));
 	return u.pathname + u.search;
 }
@@ -59,6 +60,11 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 		}
 		if (intent === "remind-sent" || intent === "remind-confirmed" || intent === "remind-declined") {
 			await updateReminder(db, ctx, id, intent.slice(7) as "sent" | "confirmed" | "declined");
+			return redirect(backTo(returnTo, base, { a: id }));
+		}
+		if (intent === "checkout") {
+			const tip = Math.round(Number(String(form.get("tip") ?? "").replace(/[^\d.]/g, "") || 0) * 100);
+			await checkout(db, ctx, id, { method: form.get("method") === "cash" ? "cash" : "card", useCredit: form.get("useCredit") === "on", tipCents: Number.isFinite(tip) ? tip : 0 });
 			return redirect(backTo(returnTo, base, { a: id }));
 		}
 		if (intent === "cancelled" && form.get("series") === "rest") {

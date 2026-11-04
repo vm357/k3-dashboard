@@ -41,6 +41,7 @@ export const CLIENT_FILTERS = ["all", "vip", "new", "inactive", "do_not_book", "
 export type ClientFilter = (typeof CLIENT_FILTERS)[number];
 
 // Written by hand: Drizzle renders a correlated column as a bare name (see STATUS, phase 4).
+const creditBalance = sql<number>`(select coalesce(sum("customer_credit_entries"."amount_cents"), 0)::int from "customer_credit_entries" where "customer_credit_entries"."customer_id" = "customers"."id")`;
 const completedVisits = sql<number>`(select count(*)::int from "appointments" where "appointments"."customer_id" = "customers"."id" and "appointments"."status" = 'completed')`;
 
 export async function listCustomers(db: Db, ctx: TenantCtx, opts: { query?: string; limit?: number; offset?: number; filter?: ClientFilter; sort?: "first" | "last" } = {}) {
@@ -82,6 +83,7 @@ export async function listCustomers(db: Db, ctx: TenantCtx, opts: { query?: stri
 				allergy: customers.allergy,
 				archivedAt: customers.archivedAt,
 				completedVisits,
+				creditCents: creditBalance,
 			})
 			.from(customers)
 			.where(where)

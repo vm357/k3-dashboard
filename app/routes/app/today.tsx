@@ -8,7 +8,7 @@ import { AppointmentPanel } from "../../components/appointment-panel";
 import { DueList } from "../../components/due-list";
 import { AllergyFlag, ClientTag } from "../../components/client-tags";
 import { loadAppointmentPanel } from "../../lib/appointment-panel.server";
-import { STATUS_LABEL, formatDate, formatMinutes, formatTime, formatTimeRange, relativeStart } from "../../lib/format";
+import { STATUS_LABEL, formatCents, formatDate, formatMinutes, formatTime, formatTimeRange, relativeStart } from "../../lib/format";
 import { hasPermission } from "../../../server/auth/permissions";
 import { requireTenant, services } from "../../../server/auth/session";
 import { listDay } from "../../../server/domain/appointments/service";
@@ -17,6 +17,7 @@ import { getBusiness } from "../../../server/domain/businesses/service";
 import { closedDates } from "../../../server/domain/calendar/service";
 import { listNotConfirmed } from "../../../server/domain/reminders/service";
 import { listWaitlist } from "../../../server/domain/waitlist/service";
+import { takingsForDay } from "../../../server/domain/payments/service";
 import { envContext } from "../../../server/context";
 import { smsConfigured } from "../../../server/sms/send";
 import { listCustomers } from "../../../server/domain/customers/service";
@@ -51,7 +52,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 
 	const canSeeClients = hasPermission(ctx.role, p, "customers.view");
 	const canCal = hasPermission(ctx.role, p, "calendar.view_own");
-	const [svc, staff, hours, clients, day, due, panel, closed, waitlist, unconfirmed] = await Promise.all([
+	const [svc, staff, hours, clients, day, due, panel, closed, waitlist, unconfirmed, takings] = await Promise.all([
 		hasPermission(ctx.role, p, "services.view") ? listServices(db, ctx) : { services: [] },
 		hasPermission(ctx.role, p, "team.view") ? listEmployees(db, ctx) : [],
 		owner ? getHours(db, ctx) : [],
@@ -62,6 +63,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		closedDates(db, ctx, iso, 1),
 		canCal ? listWaitlist(db, ctx) : [],
 		canCal ? listNotConfirmed(db, ctx, now) : [],
+		hasPermission(ctx.role, p, "reports.view") ? takingsForDay(db, ctx, iso) : null,
 	]);
 	const holiday = closed[iso] && closed[iso] !== "Closed" ? closed[iso] : null;
 
@@ -110,6 +112,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		waitlist: waitlist.map((w) => ({ ...w, createdAt: w.createdAt.toISOString() })),
 		unconfirmed: unconfirmed.map((u) => ({ ...u, startAt: u.startAt.toISOString() })),
 		todayIso: iso,
+		takings,
 		multiStaff: new Set(items.map((i) => i.employeeId)).size > 1 || staff.length > 1,
 	};
 }
@@ -254,6 +257,23 @@ export default function Today({ loaderData }: Route.ComponentProps) {
 				</ol>
 			) : d.setup && remaining === 0 ? (
 				<p className="px-0.5 text-sm text-ink-soft">Nothing booked today.</p>
+			) : null}
+
+			{d.takings ? (
+				<Card className="flex flex-col gap-2">
+					<div className="flex items-baseline justify-between">
+						<h2 className="text-base font-bold">Today's takings</h2>
+						<span className="text-xl font-bold text-heading">{formatCents(d.takings.totalCents)}</span>
+					</div>
+					{d.takings.visits === 0 ? <p className="text-sm text-ink-soft">Nothing recorded yet. Payments show here as you check clients out.</p> : (
+						<dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-4">
+							<div className="flex justify-between sm:flex-col"><dt className="text-ink-soft">Card</dt><dd className="font-semibold">{formatCents(d.takings.cardCents)}</dd></div>
+							<div className="flex justify-between sm:flex-col"><dt className="text-ink-soft">Cash</dt><dd className="font-semibold">{formatCents(d.takings.cashCents)}</dd></div>
+							<div className="flex justify-between sm:flex-col"><dt className="text-ink-soft">Tips</dt><dd className="font-semibold">{formatCents(d.takings.tipsCents)}</dd></div>
+							<div className="flex justify-between sm:flex-col"><dt className="text-ink-soft">Credit used</dt><dd className="font-semibold">{formatCents(d.takings.creditCents)}</dd></div>
+						</dl>
+					)}
+				</Card>
 			) : null}
 
 			{d.due.length > 0 ? <DueList due={d.due} base={base} timeZone={tz} compact /> : null}

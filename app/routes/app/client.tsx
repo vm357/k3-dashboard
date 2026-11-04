@@ -11,6 +11,7 @@ import { requireTenant, services } from "../../../server/auth/session";
 import { addCustomerNote, archiveCustomer, customerInput, deleteCustomer, fullName, getCustomer, restoreCustomer, setCustomerStatus, updateCustomer } from "../../../server/domain/customers/service";
 import { STATUS_LABEL, formatCents, formatDate, formatPhone, formatTime } from "../../lib/format";
 import { listForCustomer } from "../../../server/domain/appointments/service";
+import { addCredit, getCredit } from "../../../server/domain/payments/service";
 
 export function meta({ loaderData }: Route.MetaArgs): Route.MetaDescriptors {
 	return [{ title: `${loaderData?.client ? fullName(loaderData.client) : "Client"} · K3 Dashboard` }];
@@ -22,10 +23,10 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	if (!hasPermission(ctx.role, [...ctx.permissions], "customers.view")) throw new Response("Forbidden", { status: 403 });
 	const client = await getCustomer(db, ctx, params.customerId!);
 	if (!client) throw new Response("Not found", { status: 404 });
-	const visits = await listForCustomer(db, ctx, client.id);
+	const [visits, credit] = await Promise.all([listForCustomer(db, ctx, client.id), getCredit(db, ctx, client.id)]);
 	const ser = (r: (typeof visits.upcoming)[number]) => ({ ...r, startAt: r.startAt.toISOString() });
 	const sp = new URL(request.url).searchParams;
-	return { client, visits: { upcoming: visits.upcoming.map(ser), past: visits.past.map(ser), lifetimeCents: visits.lifetimeCents }, askArchive: sp.get("archive") === "1", askDelete: sp.get("delete") === "1" && ctx.role === "owner" };
+	return { client, visits: { upcoming: visits.upcoming.map(ser), past: visits.past.map(ser), lifetimeCents: visits.lifetimeCents }, askArchive: sp.get("archive") === "1", askDelete: sp.get("delete") === "1" && ctx.role === "owner", credit };
 }
 
 export async function action({ request, params, context }: Route.ActionArgs) {
@@ -39,6 +40,18 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 			return { errors: {}, saved: "note" as const };
 		}
 		const here = `/app/${params.business}/clients/${params.customerId}`;
+		if (intent === "credit-add" || intent === "credit-remove") {
+			const cents = Math.round(Number(String(form.get("amount") ?? "").replace(/[^\d.]/g, "") || 0) * 100);
+			if (!cents) return { errors: { credit: "Enter an amount." }, saved: undefined };
+			try {
+				await addCredit(db, ctx, params.customerId!, { amountCents: intent === "credit-add" ? cents : -cents, reason: String(form.get("reason") ?? "") });
+			} catch (err) {
+				const e = err as { status?: number; code?: string; message?: string };
+				if (e.status === 403) throw err;
+				return { errors: { credit: e.code === "credit_negative" ? `Can't remove more than they have. ${e.message}.` : "Could not save. Try again." }, saved: undefined };
+			}
+			return { errors: {}, saved: "credit" as const };
+		}
 		if (intent === "status") {
 			await setCustomerStatus(db, ctx, params.customerId!, String(form.get("status")));
 			return { errors: {}, saved: "status" as const };
@@ -174,6 +187,43 @@ export default function Client({ loaderData, actionData }: Route.ComponentProps)
 					{noBook ? null : <Link to={`${base}/book?client=${c.id}`} className="press rounded-pill bg-card px-4 py-2 text-sm font-semibold text-heading">Book</Link>}
 				</Card>
 			)}
+
+			<Card className="flex flex-col gap-3">
+				<div className="flex items-baseline justify-between">
+					<h2 className="text-base font-bold">Credit</h2>
+					<span className={`text-xl font-bold ${loaderData.credit.balanceCents > 0 ? "text-heading" : "text-ink-soft"}`}>{formatCents(loaderData.credit.balanceCents)}</span>
+				</div>
+				<p className="text-xs text-ink-soft">Gift cards, refunds as credit, prepaid visits. Used at checkout.</p>
+				{canEdit && !archived ? (
+					<Form method="post" className="flex flex-col gap-2">
+						<div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2">
+							<Field label="Amount" name="amount" type="number" inputMode="decimal" min={0.01} step="0.01" placeholder="25.00" required />
+							<Field label="Reason (optional)" name="reason" maxLength={80} placeholder="e.g. Gift card" />
+						</div>
+						{errors.credit ? <p role="alert" className="text-sm text-danger">{errors.credit}</p> : actionData?.saved === "credit" ? <p role="status" className="text-sm font-semibold text-heading">Saved</p> : null}
+						<div className="flex flex-wrap gap-2">
+							<Button type="submit" name="intent" value="credit-add" size="sm" variant="outlined">Add credit</Button>
+							{loaderData.credit.balanceCents > 0 ? <Button type="submit" name="intent" value="credit-remove" size="sm" variant="quiet">Remove</Button> : null}
+						</div>
+					</Form>
+				) : null}
+				{loaderData.credit.entries.length > 0 ? (
+					<details>
+						<summary className="cursor-pointer text-sm font-semibold text-ink-soft">History</summary>
+						<ol className="mt-2 flex flex-col">
+							{loaderData.credit.entries.map((e) => (
+								<li key={e.id} className="flex items-center justify-between gap-3 border-b border-hairline py-2 text-sm last:border-b-0">
+									<span className="flex min-w-0 flex-col">
+										<span className="truncate">{e.reason || (e.amountCents > 0 ? "Added" : "Removed")}</span>
+										<span className="text-xs text-ink-soft">{formatDate(e.createdAt, tz)}{e.byName ? ` · ${e.byName}` : ""}</span>
+									</span>
+									<span className={`shrink-0 font-semibold ${e.amountCents > 0 ? "text-heading" : "text-ink"}`}>{e.amountCents > 0 ? "+" : "−"}{formatCents(Math.abs(e.amountCents))}</span>
+								</li>
+							))}
+						</ol>
+					</details>
+				) : null}
+			</Card>
 
 			<Card className="flex flex-col gap-3">
 				<div className="flex items-center justify-between">

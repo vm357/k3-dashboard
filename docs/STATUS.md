@@ -253,6 +253,25 @@ Design: `K3 Dashboard.dc.html` (booking sheet, appointment sidebar). Migration `
   out), and the cancel confirmation can also cancel the later visits.
 - Tests: `tests/domain/repeat-bookings.test.ts`.
 
+## Dashboard update 6: checkout and client credit — done locally, staging pending
+
+Design: `K3 Dashboard.dc.html` (appointment sidebar checkout, client credit). Migration `0010_checkout_credit`.
+
+- Recorded by hand until Stripe (phase 5): `payments` (cash, card, credit; tip on the cash or card
+  row) and `customer_credit_entries` (a ledger; balance = sum, never below zero). Customer rows are
+  locked during checkout and credit edits so a balance cannot be spent twice.
+- Appointment panel: "Take payment · $45" once checked in or done. Checkout uses credit first when
+  ticked, then Card or Cash for the rest, plus an optional tip; it always settles the full balance.
+  Payments are listed with method, time and who recorded them. "Other" is not offered.
+- Client profile: Credit card with balance, Add credit / Remove with a reason, and history with who
+  did it. The client list shows a "$25 credit" chip.
+- Today: "Today's takings" for anyone with reports.view: card, cash, tips and credit used (credit is
+  not counted as money in).
+- `server/domain/payments/service.ts`: `checkout`, `addCredit`, `getCredit`, `listPayments`,
+  `takingsForDay`. Tests: `tests/domain/checkout-credit.test.ts`.
+
+Not done: refunds and voiding a payment (comes with Stripe), revenue in Reports from recorded payments.
+
 ## Known gaps and decisions deferred
 
 - Self-serve signup is disabled in production until phase 8; accounts come from invitations or admin onboarding.

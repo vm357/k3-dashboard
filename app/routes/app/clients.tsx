@@ -10,7 +10,7 @@ import { findDuplicates } from "../../../server/domain/customers/merge";
 import { CLIENT_FILTERS, type ClientFilter, fullName, listCustomers } from "../../../server/domain/customers/service";
 import { dueForVisit } from "../../../server/domain/reports/service";
 import { DueList } from "../../components/due-list";
-import { formatPhone } from "../../lib/format";
+import { formatCents, formatPhone } from "../../lib/format";
 
 export function meta(): Route.MetaDescriptors {
 	return [{ title: "Clients · K3 Dashboard" }];
@@ -115,6 +115,7 @@ export default function Clients({ loaderData: d }: Route.ComponentProps) {
 											<span className="truncate text-sm font-semibold">{fullName(c)}</span>
 											<ClientTag status={c.status} isNew={c.isNew} archived={!!c.archivedAt} />
 											<AllergyFlag allergy={c.allergy} />
+											{c.creditCents > 0 ? <span className="inline-flex shrink-0 items-center rounded-pill bg-mint px-2.5 py-0.5 text-xs font-bold text-heading">{formatCents(c.creditCents)} credit</span> : null}
 										</span>
 										<span className="truncate text-xs text-ink-soft">{[c.phone === "hidden" ? null : formatPhone(c.phone), c.email === "hidden" ? null : c.email].filter(Boolean).join(" · ") || "No contact details"}</span>
 									</span>

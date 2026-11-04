@@ -576,7 +576,7 @@ async function visibleEmployeeIds(tx: Tx, ctx: TenantCtx): Promise<string[]> {
 }
 
 /** Acting on an employee's calendar needs manage_all, or manage_own for your own row. */
-async function assertEmployeeAccess(tx: Tx, ctx: TenantCtx, employeeId: string) {
+export async function assertEmployeeAccess(tx: Tx, ctx: TenantCtx, employeeId: string) {
 	const [emp] = await tx.select({ id: employees.id, memberId: employees.memberId, active: employees.active }).from(employees).where(and(eq(employees.id, employeeId), eq(employees.businessId, ctx.businessId)));
 	if (!emp) throw new DomainError("employee_not_found");
 	if (can(ctx, "appointments.manage_all")) return emp;
